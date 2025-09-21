@@ -16,7 +16,8 @@
         <div class="col-md-8">
             <div class="mb-3">
                 <label for="title" class="form-label">タイトル <span class="text-danger">*</span></label>
-                <InputText id="title" class="form-control" @bind-Value="manual.Title" />
+                <InputText id="title" class="form-control" @bind-Value="manual.Title" maxlength="30" />
+                <div class="form-text text-muted">最大30文字まで</div>
                 <ValidationMessage For="@(() => manual.Title)" />
             </div>
         </div>
@@ -47,7 +48,7 @@
             <span class="bi bi-save"></span> 保存
         </button>
         <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@isSaving">
-            <span class="bi bi-x-circle"></span> キャンセル
+            <span class="bi bi-x-circle"></span> 取消
         </button>
     </div>
 </EditForm>

@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ManualApp.Models
 {
     public class Manual
     {
         public int ManualId { get; set; }
+        [StringLength(30, ErrorMessage = "タイトルは30文字以内で入力してください。")]
         public string Title { get; set; } = default!;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

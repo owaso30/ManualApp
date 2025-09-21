@@ -12,64 +12,77 @@
 
 <RadzenDialog />
 
-<h3>@manual?.Title</h3>
+<div style="position: relative;">
+    <h3>@manual?.Title</h3>
 
-<div class="mb-3">
-    <button class="btn btn-primary" @onclick="AddContent">
-        <span class="bi bi-plus-circle"></span> 新しいコンテンツ
-    </button>
-    <button class="btn btn-success ms-2" @onclick="DownloadPdf" disabled="@isGeneratingPdf">
-        @if (isGeneratingPdf)
-        {
-            <span class="spinner-border spinner-border-sm me-2"></span>
-        }
-        else
-        {
-            <span class="bi bi-file-earmark-pdf me-2"></span>
-        }
-        PDF出力
-    </button>
-    <button class="btn btn-secondary ms-2" @onclick="BackToList">
-        <span class="bi bi-arrow-left"></span> マニュアル一覧に戻る
-    </button>
-</div>
-
-@if (isLoading)
-{
-    <div class="text-center py-4">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">読み込み中...</span>
+    <div class="mb-3 d-flex justify-content-between align-items-center sticky-top bg-white py-2" style="z-index: 1000; border-bottom: 1px solid #dee2e6;">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="sortDescending" checked="@isDescending" @onchange="OnSortChanged" />
+            <label class="form-check-label" for="sortDescending">
+                降順ソート
+            </label>
         </div>
-        <div class="mt-2">読み込み中...</div>
-    </div>
-}
-else if (contents.Any())
-{
-    <div class="row">
-        @for (int i = 0; i < contents.Count; i += 2)
-        {
-            <div class="col-12 col-lg-6 mb-4">
-                @if (i < contents.Count)
+        <div class="d-flex">
+            <button class="btn btn-primary" @onclick="AddContent">
+                <span class="bi bi-plus-circle"></span> 追加
+            </button>
+            <button class="btn btn-success ms-2" @onclick="DownloadPdf" disabled="@isGeneratingPdf">
+                @if (isGeneratingPdf)
                 {
-                    @RenderContentCard(contents[i])
+                    <span class="spinner-border spinner-border-sm me-2"></span>
                 }
-            </div>
-            
-            @if (i + 1 < contents.Count)
+                else
+                {
+                    <span class="bi bi-file-earmark-pdf me-2"></span>
+                }
+                出力
+            </button>
+            <button class="btn btn-secondary ms-2" @onclick="BackToList">
+                <span class="bi bi-arrow-left"></span> 戻る
+            </button>
+        </div>
+    </div>
+
+    @if (contents.Any())
+    {
+        <div class="row">
+            @for (int i = 0; i < contents.Count; i += 2)
             {
                 <div class="col-12 col-lg-6 mb-4">
-                    @RenderContentCard(contents[i + 1])
+                    @if (i < contents.Count)
+                    {
+                        @RenderContentCard(contents[i])
+                    }
                 </div>
+                
+                @if (i + 1 < contents.Count)
+                {
+                    <div class="col-12 col-lg-6 mb-4">
+                        @RenderContentCard(contents[i + 1])
+                    </div>
+                }
             }
-        }
-    </div>
-}
-else
-{
-    <div class="alert alert-info">
-        <span class="bi bi-info-circle"></span> コンテンツがありません。新しいコンテンツを追加してください。
-    </div>
-}
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info">
+            <span class="bi bi-info-circle"></span> コンテンツがありません。新しいコンテンツを追加してください。
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: white; display: flex; align-items: flex-start; justify-content: center; z-index: 9999; padding-top: 200px;">
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">読み込み中...</span>
+                </div>
+                <div class="mt-3 fs-5">読み込み中...</div>
+            </div>
+        </div>
+    }
+</div>
 
 @code {
     [Parameter] public int ManualId { get; set; }
@@ -78,16 +91,26 @@ else
     private List<Content> contents = new();
     private bool isLoading = true;
     private bool isGeneratingPdf = false;
+    private bool isDescending = false;
+    private bool isFirstRender = true;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await LoadData();
+        if (firstRender)
+        {
+            await LoadData();
+            isFirstRender = false;
+            StateHasChanged();
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
         // パラメータが変更された場合（ナビゲーション時）にデータを再読み込み
-        await LoadData();
+        if (!isFirstRender)
+        {
+            await LoadData();
+        }
     }
 
     private async Task LoadData()
@@ -104,11 +127,31 @@ else
 
             var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
             contents = contentsEnumerable.ToList();
+            SortContents();
         }
         finally
         {
             isLoading = false;
         }
+    }
+
+    private void SortContents()
+    {
+        if (isDescending)
+        {
+            contents = contents.OrderByDescending(c => c.Order).ToList();
+        }
+        else
+        {
+            contents = contents.OrderBy(c => c.Order).ToList();
+        }
+    }
+
+    private async Task OnSortChanged(ChangeEventArgs e)
+    {
+        isDescending = (bool)e.Value!;
+        SortContents();
+        await InvokeAsync(StateHasChanged);
     }
 
     private RenderFragment RenderContentCard(Content content) => @<div class="card h-100">

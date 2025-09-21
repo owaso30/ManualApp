@@ -77,10 +77,23 @@ namespace ManualApp.Services
             if (category.OwnerId != userId)
                 return false; // 自分のカテゴリーでない場合は削除不可
 
-            // このカテゴリを使用しているマニュアルがあるかチェック
-            var hasManuals = await _context.Manuals.AnyAsync(m => m.CategoryId == id);
-            if (hasManuals)
-                return false; // マニュアルが存在する場合は削除不可
+            // デフォルトカテゴリーを取得
+            var defaultCategory = await _context.Categories
+                .Where(c => c.IsDefault)
+                .FirstOrDefaultAsync();
+            
+            if (defaultCategory == null)
+                return false; // デフォルトカテゴリーが存在しない場合は削除不可
+
+            // このカテゴリを使用しているマニュアルをデフォルトカテゴリーに変更
+            var manualsToUpdate = await _context.Manuals
+                .Where(m => m.CategoryId == id)
+                .ToListAsync();
+            
+            foreach (var manual in manualsToUpdate)
+            {
+                manual.CategoryId = defaultCategory.CategoryId;
+            }
 
             _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
@@ -95,7 +108,11 @@ namespace ManualApp.Services
             if (category == null || category.IsDefault || category.OwnerId != userId)
                 return false;
                 
-            return !await _context.Manuals.AnyAsync(m => m.CategoryId == id);
+            // デフォルトカテゴリーが存在するかチェック
+            var hasDefaultCategory = await _context.Categories
+                .AnyAsync(c => c.IsDefault);
+                
+            return hasDefaultCategory;
         }
 
         public async Task<bool> CanEditCategoryAsync(int id)
