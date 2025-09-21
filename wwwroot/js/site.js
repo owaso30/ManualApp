@@ -33,3 +33,9 @@ window.downloadFile = function(fileName, base64Data) {
         alert('ファイルのダウンロードに失敗しました。');
     }
 };
+
+
+// 接続状態チェック
+window.isBlazorConnected = function() {
+    return window.Blazor && window.Blazor._internal && window.Blazor._internal.navigationManager;
+};

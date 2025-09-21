@@ -2,6 +2,7 @@
 @page "/manuals/{ManualId:int}/content/edit/{Id:int}"
 @rendermode InteractiveServer
 @attribute [Authorize]
+@implements IDisposable
 @inject ContentService ContentService
 @inject ManualService ManualService
 @inject ICurrentUserService CurrentUserService
@@ -62,9 +63,9 @@
         <div class="col-md-6">
             <div class="mb-3">
                 <label for="text" class="form-label">コンテンツ <span class="text-danger">*</span></label>
-                <InputTextArea id="text" class="form-control" rows="8" @bind-Value="content.Text" @oninput="OnTextInput" @onkeydown="OnTextKeyDown" maxlength="200" />
+                <InputTextArea id="text" class="form-control" rows="8" @bind-Value="content.Text" @onkeydown="OnTextKeyDown" maxlength="200" />
                 <ValidationMessage For="@(() => content.Text)" />
-                <div class="form-text text-muted">改行は最大5回まで。文字数: <span id="text-count">@((content.Text?.Length ?? 0))</span>/200</div>
+                <div class="form-text text-muted">改行は最大5回まで。最大200文字まで</div>
             </div>
         </div>
         <div class="col-md-6">
@@ -140,6 +141,7 @@
     private bool isSaving = false;
     private bool isUploading = false;
     private bool IsEdit => Id.HasValue;
+    
 
     protected override async Task OnInitializedAsync()
     {
@@ -186,7 +188,8 @@
                 await ContentService.AddContentAsync(content);
             }
             
-            Navigation.NavigateTo($"/manuals/view/{ManualId}");
+            // 保存後はデータを再読み込み
+            Navigation.NavigateTo($"/manuals/view/{ManualId}", forceLoad: true);
         }
         catch (Exception ex)
         {
@@ -229,6 +232,11 @@
         {
             // タイムアウトは無視
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("No interop methods are registered"))
+        {
+            // 接続切断時のエラーは無視
+            Console.WriteLine("接続が切断されています。クリップボード機能は利用できません。");
+        }
         catch (Exception ex)
         {
             Console.WriteLine($"クリップボード貼り付けエラー: {ex.Message}");
@@ -244,18 +252,6 @@
         return Task.CompletedTask;
     }
 
-    private void OnTextInput(ChangeEventArgs e)
-    {
-        var inputText = e.Value?.ToString() ?? "";
-        
-        // 文字数制限のみを適用
-        if (inputText.Length > 200)
-        {
-            inputText = inputText.Substring(0, 200);
-        }
-        
-        content.Text = inputText;
-    }
 
     private async Task OnTextKeyDown(KeyboardEventArgs e)
     {
@@ -267,18 +263,30 @@
             // 改行数が5を超える場合はEnter入力を無効化
             if (newlineCount >= 5)
             {
-                await JSRuntime.InvokeVoidAsync("eval", @"
-                    const element = document.getElementById('text');
-                    if (element) {
-                        // 最後の改行を削除
-                        const text = element.value;
-                        if (text.endsWith('\n')) {
-                            element.value = text.slice(0, -1);
+                try
+                {
+                    await JSRuntime.InvokeVoidAsync("eval", @"
+                        const element = document.getElementById('text');
+                        if (element) {
+                            // 最後の改行を削除
+                            const text = element.value;
+                            if (text.endsWith('\n')) {
+                                element.value = text.slice(0, -1);
+                            }
+                            element.setSelectionRange(element.value.length, element.value.length);
+                            element.focus();
                         }
-                        element.setSelectionRange(element.value.length, element.value.length);
-                        element.focus();
-                    }
-                ");
+                    ");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("No interop methods are registered"))
+                {
+                    // 接続切断時は無視
+                    Console.WriteLine("接続が切断されています。改行制限機能は利用できません。");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"改行制限エラー: {ex.Message}");
+                }
             }
         }
     }
@@ -342,9 +350,26 @@
         }
     }
 
-    private void Cancel()
+    private async Task Cancel()
     {
-        Navigation.NavigateTo($"/manuals/view/{ManualId}");
+        // 変更がある場合は確認ダイアログを表示
+        bool hasChanges = !string.IsNullOrEmpty(content.Text);
+        if (hasChanges)
+        {
+            var result = await DialogService.Confirm("変更内容が保存されていません。本当にキャンセルしますか？", "確認", new ConfirmOptions() { OkButtonText = "キャンセル", CancelButtonText = "続行" });
+            if (!result.HasValue || !result.Value)
+            {
+                return; // キャンセルを中止
+            }
+        }
+        
+        // キャッシュを無効化してデータを再読み込み
+        Navigation.NavigateTo($"/manuals/view/{ManualId}", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        // リソースのクリーンアップ（現在は不要）
     }
 
     private async Task OpenImageAnnotator()
@@ -365,9 +390,23 @@
                     var dataUrl = $"data:image/png;base64,{base64String}";
                     
                     // JavaScript側でDataURLをBlobに変換してクリップボードにコピー
-                    var copySuccess = await JSRuntime.InvokeAsync<bool>("copyDataUrlToClipboard", dataUrl);
-                    if (!copySuccess)
+                    try
                     {
+                        var copySuccess = await JSRuntime.InvokeAsync<bool>("copyDataUrlToClipboard", dataUrl);
+                        if (!copySuccess)
+                        {
+                            hasImage = false;
+                        }
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.Contains("No interop methods are registered"))
+                    {
+                        // 接続切断時は無視
+                        Console.WriteLine("接続が切断されています。画像コピー機能は利用できません。");
+                        hasImage = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"画像コピーエラー: {ex.Message}");
                         hasImage = false;
                     }
                 }

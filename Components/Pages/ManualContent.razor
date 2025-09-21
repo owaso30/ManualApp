@@ -84,6 +84,12 @@ else
         await LoadData();
     }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        // パラメータが変更された場合（ナビゲーション時）にデータを再読み込み
+        await LoadData();
+    }
+
     private async Task LoadData()
     {
         isLoading = true;

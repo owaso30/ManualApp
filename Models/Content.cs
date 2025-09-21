@@ -1,9 +1,14 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ManualApp.Models
 {
     public class Content
     {
         public int ContentId { get; set; }
+        
+        [StringLength(200, ErrorMessage = "文字数は200文字以内で入力してください。")]
         public string Text { get; set; } = default!;
+        
         public int Order { get; set; } = 0;
 
         // Manualとの関係
