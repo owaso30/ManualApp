@@ -1,0 +1,115 @@
+@page "/manuals"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ManualService ManualService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+
+<h3>マニュアル一覧</h3>
+
+<div class="mb-3">
+    <button class="btn btn-primary" @onclick="CreateManual">
+        <span class="bi bi-plus-circle"></span> 新しいマニュアル
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-4">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">読み込み中...</span>
+        </div>
+        <div class="mt-2">読み込み中...</div>
+    </div>
+}
+else if (manuals.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>タイトル</th>
+                    <th>カテゴリー</th>
+                    <th>作成日</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var manual in manuals)
+                {
+                    <tr>
+                        <td>@manual.Title</td>
+                        <td>@manual.Category.Name</td>
+                        <td>@manual.CreatedAt.ToString("yyyy/MM/dd")</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => EditManual(manual.ManualId)">
+                                <span class="bi bi-pencil"></span> 編集
+                            </button>
+                            <button class="btn btn-sm btn-outline-info me-2" @onclick="() => ViewManual(manual.ManualId)">
+                                <span class="bi bi-eye"></span> 表示
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteManual(manual.ManualId)">
+                                <span class="bi bi-trash"></span> 削除
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <span class="bi bi-info-circle"></span> マニュアルがありません。
+    </div>
+}
+
+@code {
+    private List<Manual> manuals = new();
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadManuals();
+    }
+
+    private async Task LoadManuals()
+    {
+        isLoading = true;
+        try
+        {
+            var userId = CurrentUserService.UserId;
+            var manualsEnumerable = await ManualService.GetManualsByUserAsync(userId);
+            manuals = manualsEnumerable.ToList();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void CreateManual()
+    {
+        Navigation.NavigateTo("/manuals/edit");
+    }
+
+    private void EditManual(int id)
+    {
+        Navigation.NavigateTo($"/manuals/edit/{id}");
+    }
+
+    private void ViewManual(int id)
+    {
+        Navigation.NavigateTo($"/manuals/view/{id}");
+    }
+
+    private async Task DeleteManual(int id)
+    {
+        var result = await ManualService.DeleteManualAsync(id);
+        if (result)
+        {
+            await LoadManuals();
+        }
+    }
+}

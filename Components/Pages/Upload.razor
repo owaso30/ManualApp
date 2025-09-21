@@ -1,0 +1,41 @@
+@page "/upload"
+@rendermode InteractiveServer
+@inject S3Service S3Service
+@inject Data.ManualAppContext Db
+
+<h3>画像アップロード</h3>
+
+<InputFile OnChange="OnFileSelected" maxAllowedSize="10485760" />
+<button class="btn btn-primary" @onclick="UploadImage">アップロード</button>
+
+@if (!string.IsNullOrEmpty(uploadedUrl))
+{
+    <p>アップロード完了！</p>
+    <img src="@uploadedUrl" alt="Uploaded" width="300" />
+}
+
+@code {
+    private IBrowserFile selectedFile;
+    private string uploadedUrl;
+
+    async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    async Task UploadImage()
+    {
+        if (selectedFile != null)
+        {
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 10485760);
+            var url = await S3Service.UploadFileAsync(stream, selectedFile.Name);
+
+            uploadedUrl = url;
+
+            // DBに保存
+            var image = new Image { FilePath = url };
+            Db.Images.Add(image);
+            Db.SaveChanges();
+        }
+    }
+}

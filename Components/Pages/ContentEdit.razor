@@ -1,0 +1,409 @@
+@page "/manuals/{ManualId:int}/content/edit"
+@page "/manuals/{ManualId:int}/content/edit/{Id:int}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ContentService ContentService
+@inject ManualService ManualService
+@inject ICurrentUserService CurrentUserService
+@inject S3Service S3Service
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+
+<RadzenDialog />
+<h3>@(IsEdit ? "コンテンツ編集" : "新しいコンテンツ")</h3>
+
+@if (!IsEdit && existingContents.Any())
+{
+    <div class="alert alert-info mb-4">
+        <h5><span class="bi bi-lightbulb"></span> 直近の手順（新しい順）</h5>
+        <div class="row">
+            @foreach (var existingContent in existingContents.Take(2))
+            {
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <small class="text-muted">手順 @existingContent.Order</small>
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="row">
+                                <div class="col-8">
+                                    <small class="text-truncate d-block">
+                                        @(existingContent.Text?.Length > 50 ? existingContent.Text.Substring(0, 50) + "..." : existingContent.Text)
+                                    </small>
+                                </div>
+                                <div class="col-4 text-center">
+                                    @if (existingContent.Image != null)
+                                    {
+                                        <img src="@existingContent.Image.FilePath" class="img-thumbnail" style="width: 40px; height: 40px; object-fit: cover;" />
+                                    }
+                                    else
+                                    {
+                                        <span class="bi bi-image text-muted"></span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (existingContents.Count > 2)
+        {
+            <small class="text-muted">他 @(existingContents.Count - 2) 件の手順があります</small>
+        }
+    </div>
+}
+
+<EditForm Model="content" OnValidSubmit="SaveContent">
+    <DataAnnotationsValidator />
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="text" class="form-label">コンテンツ <span class="text-danger">*</span></label>
+                <InputTextArea id="text" class="form-control" rows="8" @bind-Value="content.Text" @oninput="OnTextInput" @onkeydown="OnTextKeyDown" maxlength="200" />
+                <ValidationMessage For="@(() => content.Text)" />
+                <div class="form-text text-muted">改行は最大5回まで。文字数: <span id="text-count">@((content.Text?.Length ?? 0))</span>/200</div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label class="form-label">画像</label>
+                <div class="border rounded p-3 text-center" style="min-height: 200px;" 
+                     @onpaste="OnPaste" 
+                     @onkeydown="OnKeyDown"
+                     tabindex="0">
+                    @if (content.Image != null)
+                    {
+                        <img id="content-image" src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 150px;" />
+                    }
+                    else
+                    {
+                        <div class="text-muted">
+                            <span class="bi bi-image" style="font-size: 2rem;"></span>
+                            <p>画像なし</p>
+                        </div>
+                    }
+                    
+                    @if (isUploading)
+                    {
+                        <div class="text-center mt-2">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            <small>アップロード中...</small>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mt-2">
+                            <InputFile OnChange="OnFileSelected" accept="image/*" class="form-control form-control-sm mb-2" />
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="OpenImageAnnotator">
+                                    <span class="bi bi-pencil-square"></span> 加工して貼り付け
+                                </button>
+                                @if (content.Image != null)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="RemoveImage">
+                                        <span class="bi bi-trash"></span> 画像を削除
+                                    </button>
+                                }
+                            </div>
+                            <small class="form-text text-muted">画像ファイルを選択するか、Ctrl+Vでクリップボードから貼り付け</small>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <button type="submit" class="btn btn-primary me-2" disabled="@isSaving">
+            @if (isSaving)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+            }
+            <span class="bi bi-save"></span> 保存
+        </button>
+        <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@isSaving">
+            <span class="bi bi-x-circle"></span> キャンセル
+        </button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter] public int ManualId { get; set; }
+    [Parameter] public int? Id { get; set; }
+    
+    private Content content = new();
+    private Manual? manual;
+    private List<Content> existingContents = new();
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private bool IsEdit => Id.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        manual = await ManualService.GetManualByIdAsync(ManualId);
+        if (manual == null)
+        {
+            Navigation.NavigateTo("/manuals");
+            return;
+        }
+
+        var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
+        existingContents = contentsEnumerable.OrderByDescending(c => c.Order).ToList();
+
+        if (IsEdit && Id.HasValue)
+        {
+            var existingContent = await ContentService.GetContentByIdAsync(Id.Value);
+            if (existingContent is not null)
+            {
+                content = existingContent;
+            }
+            else
+            {
+                Navigation.NavigateTo($"/manuals/view/{ManualId}");
+                return;
+            }
+        }
+        else
+        {
+            content.ManualId = ManualId;
+        }
+    }
+
+    private async Task SaveContent()
+    {
+        isSaving = true;
+        try
+        {
+            if (IsEdit)
+            {
+                await ContentService.UpdateContentAsync(content);
+            }
+            else
+            {
+                await ContentService.AddContentAsync(content);
+            }
+            
+            Navigation.NavigateTo($"/manuals/view/{ManualId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラー: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        if (e.File == null) return;
+        await UploadImageFile(e.File);
+    }
+
+    private async Task OnPaste(ClipboardEventArgs e)
+    {
+        if (isUploading) return;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var imageData = await JSRuntime.InvokeAsync<string>("getClipboardImage");
+            
+            if (!string.IsNullOrEmpty(imageData))
+            {
+                if (imageData.Length > 2 * 1024 * 1024)
+                {
+                    return;
+                }
+                
+                var bytes = Convert.FromBase64String(imageData.Split(',')[1]);
+                using var stream = new MemoryStream(bytes);
+                await UploadImageFromStream(stream, $"clipboard_{Guid.NewGuid()}.png");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // タイムアウトは無視
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"クリップボード貼り付けエラー: {ex.Message}");
+        }
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "v" && e.CtrlKey)
+        {
+            // Ctrl+Vの処理はOnPasteで行う
+        }
+        return Task.CompletedTask;
+    }
+
+    private void OnTextInput(ChangeEventArgs e)
+    {
+        var inputText = e.Value?.ToString() ?? "";
+        
+        // 文字数制限のみを適用
+        if (inputText.Length > 200)
+        {
+            inputText = inputText.Substring(0, 200);
+        }
+        
+        content.Text = inputText;
+    }
+
+    private async Task OnTextKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            var currentText = content.Text ?? "";
+            var newlineCount = currentText.Count(c => c == '\n');
+            
+            // 改行数が5を超える場合はEnter入力を無効化
+            if (newlineCount >= 5)
+            {
+                await JSRuntime.InvokeVoidAsync("eval", @"
+                    const element = document.getElementById('text');
+                    if (element) {
+                        // 最後の改行を削除
+                        const text = element.value;
+                        if (text.endsWith('\n')) {
+                            element.value = text.slice(0, -1);
+                        }
+                        element.setSelectionRange(element.value.length, element.value.length);
+                        element.focus();
+                    }
+                ");
+            }
+        }
+    }
+
+    private async Task UploadImageFile(IBrowserFile file)
+    {
+        using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        await UploadImageFromStream(stream, file.Name);
+    }
+
+    private async Task UploadImageFromStream(Stream stream, string fileName)
+    {
+        isUploading = true;
+        try
+        {
+            var userId = CurrentUserService.UserId;
+            var s3Key = $"{userId}/{ManualId}/{content.ContentId}/{fileName}";
+
+            var s3Url = await S3Service.UploadFileAsync(stream, s3Key);
+
+            if (content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath))
+            {
+                try
+                {
+                    // URL形式をチェック
+                    if (Uri.IsWellFormedUriString(content.Image.FilePath, UriKind.Absolute))
+                    {
+                        await S3Service.DeleteFileAsync(content.Image.FilePath);
+                    }
+                }
+                catch (Exception deleteEx)
+                {
+                    Console.WriteLine($"ファイル削除エラー: {deleteEx.Message}");
+                    // 削除に失敗してもアップロードは続行
+                }
+            }
+
+            content.Image = new Image
+            {
+                FilePath = s3Url,
+                ContentId = content.ContentId
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"画像アップロードエラー: {ex.Message}");
+            throw; // エラーを再スローして呼び出し元で処理
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task RemoveImage()
+    {
+        if (content.Image != null)
+        {
+            await S3Service.DeleteFileAsync(content.Image.FilePath);
+            content.Image = null;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo($"/manuals/view/{ManualId}");
+    }
+
+    private async Task OpenImageAnnotator()
+    {
+        bool hasImage = content.Image != null;
+        
+        if (hasImage)
+        {
+            try
+            {
+                // サーバーサイドで画像を取得してBase64エンコード
+                var imageUrl = content.Image?.FilePath;
+                if (!string.IsNullOrEmpty(imageUrl))
+                {
+                    using var httpClient = new HttpClient();
+                    var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
+                    var base64String = Convert.ToBase64String(imageBytes);
+                    var dataUrl = $"data:image/png;base64,{base64String}";
+                    
+                    // JavaScript側でDataURLをBlobに変換してクリップボードにコピー
+                    var copySuccess = await JSRuntime.InvokeAsync<bool>("copyDataUrlToClipboard", dataUrl);
+                    if (!copySuccess)
+                    {
+                        hasImage = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"画像コピーエラー: {ex.Message}");
+                hasImage = false;
+            }
+        }
+        
+        var result = await DialogService.OpenAsync<ClipboardAnnotator>("画像加工", 
+            new Dictionary<string, object> { { "HasImage", hasImage } },
+            new DialogOptions() { Width = "95vw", Height = "95vh", Left = "-15vw", Resizable = true, Draggable = true });
+
+        if (result != null)
+        {
+            var processedImageData = result.ToString();
+            
+            if (!string.IsNullOrEmpty(processedImageData))
+            {
+                try
+                {
+                    // DataURLの形式をチェック
+                    if (processedImageData.StartsWith("data:image/"))
+                    {
+                        var bytes = Convert.FromBase64String(processedImageData.Split(',')[1]);
+                        using var stream = new MemoryStream(bytes);
+                        await UploadImageFromStream(stream, $"processed_{Guid.NewGuid()}.png");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"加工画像のアップロードエラー: {ex.Message}");
+                }
+            }
+        }
+    }
+}

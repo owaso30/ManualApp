@@ -1,0 +1,116 @@
+@page "/categories"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject CategoryService CategoryService
+@inject NavigationManager Navigation
+
+<h3>カテゴリー管理</h3>
+
+<div class="mb-3">
+    <button class="btn btn-primary" @onclick="CreateCategory">
+        <span class="bi bi-plus-circle"></span> 新しいカテゴリー
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-4">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">読み込み中...</span>
+        </div>
+        <div class="mt-2">読み込み中...</div>
+    </div>
+}
+else if (categories.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>名前</th>
+                    <th>説明</th>
+                    <th>マニュアル数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var category in categories)
+                {
+                    <tr>
+                        <td>@category.Name</td>
+                        <td>@(category.Description ?? "-")</td>
+                        <td>@category.Manuals.Count</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-2" 
+                                    @onclick="() => EditCategory(category.CategoryId)"
+                                    disabled="@category.IsDefault">
+                                <span class="bi bi-pencil"></span> 編集
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" 
+                                    @onclick="() => DeleteCategory(category.CategoryId)"
+                                    disabled="@(category.Manuals.Count > 0 || category.IsDefault)">
+                                <span class="bi bi-trash"></span> 削除
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <span class="bi bi-info-circle"></span> カテゴリーがありません。
+    </div>
+}
+
+@code {
+    private List<Category> categories = new();
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        isLoading = true;
+        try
+        {
+            var categoriesEnumerable = await CategoryService.GetAllCategoriesAsync();
+            categories = categoriesEnumerable.ToList();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void CreateCategory()
+    {
+        Navigation.NavigateTo("/categories/edit");
+    }
+
+    private void EditCategory(int id)
+    {
+        Navigation.NavigateTo($"/categories/edit/{id}");
+    }
+
+    private async Task DeleteCategory(int id)
+    {
+        var canDelete = await CategoryService.CanDeleteCategoryAsync(id);
+        if (!canDelete)
+        {
+            // ここでアラートを表示する処理を追加できます
+            return;
+        }
+
+        var result = await CategoryService.DeleteCategoryAsync(id);
+        if (result)
+        {
+            await LoadCategories();
+        }
+    }
+}

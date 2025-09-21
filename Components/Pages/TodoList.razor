@@ -1,0 +1,53 @@
+@page "/todo"
+@rendermode InteractiveServer
+
+<h3>TODOリスト ✅</h3>
+
+<div class="mb-3">
+    <input @bind="newTitle" placeholder="新しいタスクを入力" class="form-control" />
+    <RadzenButton Text="追加" Click="AddTodo" ButtonStyle="ButtonStyle.Primary" />
+</div>
+
+@if (todos.Count == 0)
+{
+    <p>タスクはまだありません 🎉</p>
+}
+else
+{
+    <ul class="list-unstyled">
+        @foreach (var todo in todos)
+        {
+            <li>
+                <TodoItemView Item="todo"
+                              OnDelete="HandleDelete"
+                              OnStatusChange="HandleStatusChange" />
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    string newTitle = string.Empty;
+    
+    List<TodoItem> todos = new();
+
+    void AddTodo()
+    {
+        if (!string.IsNullOrWhiteSpace(newTitle))
+        {
+            todos.Add(new TodoItem { Title = newTitle, IsDone = false });
+            newTitle = string.Empty;
+        }
+    }
+
+    void HandleDelete(TodoItem item)
+    {
+        todos.Remove(item);
+    }
+
+    void HandleStatusChange(TodoItem item)
+    {
+        // 状態変更の処理（例：保存処理を追加予定）
+        // ステータス変更を処理
+    }
+}

@@ -1,0 +1,62 @@
+﻿@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <!-- #startregion ログイン状態表示 -->
+            <div class="ms-auto">
+                @if (isSignedIn)
+                {
+                    <span class="text-success me-3">
+                        <i class="bi bi-person-check"></i>
+                        ログイン中: @userEmail
+                    </span>
+                    <a class="btn btn-outline-danger btn-sm" href="/Identity/Account/Logout">ログアウト</a>
+                }
+                else
+                {
+                    <a class="btn btn-outline-primary btn-sm me-2" href="/Identity/Account/Login">ログイン</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="/Identity/Account/Register">登録</a>
+                }
+            </div>
+            <!-- #endregion -->
+        </div>
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    private bool isSignedIn = false;
+    private string userEmail = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UpdateAuthState();
+    }
+
+    private async Task UpdateAuthState()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            isSignedIn = authState.User.Identity?.IsAuthenticated ?? false;
+            userEmail = authState.User.Identity?.Name ?? string.Empty;
+            
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            isSignedIn = false;
+            userEmail = string.Empty;
+            StateHasChanged();
+        }
+    }
+}
+

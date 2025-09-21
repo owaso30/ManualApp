@@ -1,0 +1,26 @@
+<div class="todo-item">
+    <input type="checkbox" @bind="Item.IsDone" @bind:event="oninput" @onchange="OnStatusChanged" />
+    <span class="@(Item.IsDone ? "done" : "")">@Item.Title</span>
+    <RadzenButton Text="削除" Click="OnDeleteClicked" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" />
+</div>
+
+@code {
+    [Parameter]
+    public required TodoItem Item { get; set; }
+
+    [Parameter]
+    public EventCallback<TodoItem> OnDelete { get; set; }
+
+    [Parameter]
+    public EventCallback<TodoItem> OnStatusChange { get; set; }
+
+    private async Task OnDeleteClicked()
+    {
+        await OnDelete.InvokeAsync(Item);
+    }
+
+    private async Task OnStatusChanged(ChangeEventArgs e)
+    {
+        await OnStatusChange.InvokeAsync(Item);
+    }
+}

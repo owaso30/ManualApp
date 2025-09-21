@@ -1,0 +1,249 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject DialogService DialogService
+
+<div class="row">
+    <div class="col-md-9">
+        <canvas id="annotCanvas" width="1080" height="540" style="border:1px solid #ddd; max-width:100%; cursor: crosshair;"></canvas>
+    </div>
+    <div class="col-md-3">
+        <div class="d-flex flex-column gap-3" style="max-width: 250px;">
+            <!-- ツール選択 -->
+            <div>
+                <label class="form-label small">ツール</label>
+                <div class="row">
+                    <div class="col-6">
+                        <button class="btn btn-sm btn-outline-primary w-100" @onclick='() => SetTool("text")'>テキスト</button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-sm btn-outline-primary w-100" @onclick='() => SetTool("arrow")'>矢印</button>
+                    </div>
+                </div>
+                <div class="row mt-1">
+                    <div class="col-6">
+                        <button class="btn btn-sm btn-outline-primary w-100" @onclick='() => SetTool("rect")'>四角</button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-sm btn-outline-primary w-100" @onclick='() => SetTool("ellipse")'>楕円</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 色と文字サイズ設定 -->
+            <div>
+                <div class="row">
+                    <div class="col-6">
+                        <label class="form-label small">色</label>
+                        <input type="color" class="form-control form-control-color w-100" @onchange="OnColorChanged" value="#ff3b30">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small">文字サイズ</label>
+                        <input type="number" class="form-control form-control-sm" value="24" min="8" max="200" @onchange="OnFontChanged">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 線幅設定 -->
+            <div>
+                <label class="form-label small">線幅</label>
+                <input type="range" min="1" max="12" value="3" class="form-range w-100" @oninput="OnWidthChanged">
+            </div>
+
+            <!-- テキスト入力 -->
+            <div>
+                <label class="form-label small">テキスト</label>
+                <input type="text" class="form-control form-control-sm" @bind="_text" @oninput="OnTextChanged" placeholder="注記テキスト">
+            </div>
+
+            <hr>
+
+            <!-- 操作ボタン -->
+            <div>
+                <div class="row">
+                    <div class="col-6">
+                        <button class="btn btn-outline-dark btn-sm w-100" @onclick="Undo">
+                            <span class="bi bi-arrow-counterclockwise"></span> 元に戻す
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-outline-danger btn-sm w-100" @onclick="Clear">
+                            <span class="bi bi-trash"></span> 全消去
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- 完了・キャンセル -->
+            <div>
+                <div class="row">
+                    <div class="col-6">
+                        <button class="btn btn-success btn-sm w-100" @onclick="SaveAndClose">
+                            <span class="bi bi-check-lg"></span> 完了
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-secondary btn-sm w-100" @onclick="Cancel">
+                            <span class="bi bi-x-lg"></span> キャンセル
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted mt-2">@_status</p>
+
+@code {
+    [Parameter] public string? InitialImage { get; set; }
+    [Parameter] public bool HasImage { get; set; } = false;
+    
+    string _status = "Ctrl+Vまたは『貼り付け』で画像を読み込んでください。";
+    string _text = "ここを選択";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // グローバル関数として定義されたJavaScript関数を直接呼び出し
+        await JS.InvokeVoidAsync("initCanvas", "annotCanvas");
+        await JS.InvokeVoidAsync("enablePasteShortcut", "annotCanvas");
+        
+        // 画像がある場合のみ自動的にクリップボードから貼り付けを試行
+        if (HasImage)
+        {
+            await TryPasteFromClipboard();
+        }
+        
+        StateHasChanged();
+    }
+
+    async Task TryPasteFromClipboard()
+    {
+        try
+        {
+            _status = "クリップボードから画像を貼り付け中...";
+            StateHasChanged();
+            
+            var ok = await JS.InvokeAsync<bool>("pasteFromClipboard", "annotCanvas");
+            if (ok)
+            {
+                _status = "画像を貼り付けました。";
+            }
+            else
+            {
+                _status = "Ctrl+Vまたは『貼り付け』で画像を読み込んでください。";
+            }
+        }
+        catch (JSException ex)
+        {
+            _status = $"貼り付け失敗: {ex.Message}（HTTPS/ユーザー操作が必要）";
+        }
+    }
+
+    async Task SetTool(string tool)
+    {
+        await JS.InvokeVoidAsync("setTool", "annotCanvas", tool);
+        
+        // テキストツール選択時にテキストボックスの値を再読み込み
+        if (tool == "text")
+        {
+            await JS.InvokeVoidAsync("setText", "annotCanvas", _text);
+        }
+        
+        _status = $"ツール: {tool}";
+    }
+
+    async Task OnColorChanged(ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString() ?? "#ff3b30";
+        await JS.InvokeVoidAsync("setColor", "annotCanvas", color);
+        _status = $"色: {color}";
+    }
+
+    async Task OnWidthChanged(ChangeEventArgs e)
+    {
+        var w = e.Value?.ToString() ?? "3";
+        await JS.InvokeVoidAsync("setWidth", "annotCanvas", w);
+        _status = $"線幅: {w}";
+    }
+
+    async Task OnFontChanged(ChangeEventArgs e)
+    {
+        var px = e.Value?.ToString() ?? "24";
+        await JS.InvokeVoidAsync("setFontPx", "annotCanvas", px);
+        _status = $"文字サイズ: {px}px";
+    }
+
+    async Task OnTextChanged()
+    {
+        await JS.InvokeVoidAsync("setText", "annotCanvas", _text);
+        await SetTool("text");
+        _status = $"テキスト設定: {_text}";
+    }
+
+    async Task Paste()
+    {
+        try
+        {
+            var ok = await JS.InvokeAsync<bool>("pasteFromClipboard", "annotCanvas");
+            _status = ok ? "画像を貼り付けました。" : "クリップボードに画像がありません。";
+        }
+        catch (JSException ex)
+        {
+            _status = $"貼り付け失敗: {ex.Message}（HTTPS/ユーザー操作が必要）";
+        }
+    }
+
+    async Task Copy()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("copyCanvasToClipboard", "annotCanvas", "image/png");
+            _status = "キャンバス画像をクリップボードへコピーしました。";
+        }
+        catch (JSException ex)
+        {
+            _status = $"コピー失敗: {ex.Message}（ユーザー操作が必要）";
+        }
+    }
+
+    async Task Undo()
+    {
+        var ok = await JS.InvokeAsync<bool>("undo", "annotCanvas");
+        _status = ok ? "元に戻しました。" : "これ以上戻せません。";
+    }
+
+    async Task Clear()
+    {
+        await JS.InvokeVoidAsync("clearCanvas", "annotCanvas");
+        _status = "キャンバスをクリアしました。";
+    }
+
+    async Task SaveAndClose()
+    {
+        try
+        {
+            var imageData = await JS.InvokeAsync<string>("getCanvasAsDataURL", "annotCanvas");
+            if (string.IsNullOrEmpty(imageData))
+            {
+                _status = "画像データの取得に失敗しました。";
+                return;
+            }
+            
+            _status = "画像を保存しました。";
+            DialogService.Close(imageData);
+        }
+        catch (JSException ex)
+        {
+            _status = $"保存失敗: {ex.Message}";
+        }
+    }
+
+    async Task Cancel()
+    {
+        DialogService.Close();
+    }
+}

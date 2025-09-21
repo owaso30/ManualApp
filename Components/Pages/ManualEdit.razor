@@ -1,0 +1,125 @@
+@page "/manuals/edit"
+@page "/manuals/edit/{Id:int}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ManualService ManualService
+@inject CategoryService CategoryService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+
+<h3>@(IsEdit ? "マニュアル編集" : "新しいマニュアル")</h3>
+
+<EditForm Model="manual" OnValidSubmit="SaveManual">
+    <DataAnnotationsValidator />
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="mb-3">
+                <label for="title" class="form-label">タイトル <span class="text-danger">*</span></label>
+                <InputText id="title" class="form-control" @bind-Value="manual.Title" />
+                <ValidationMessage For="@(() => manual.Title)" />
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="category" class="form-label">カテゴリー <span class="text-danger">*</span></label>
+                <InputSelect id="category" class="form-select" @bind-Value="manual.CategoryId">
+                    <option value="">カテゴリーを選択してください</option>
+                    @foreach (var category in categories)
+                    {
+                        <option value="@category.CategoryId">@category.Name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="@(() => manual.CategoryId)" />
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <button type="submit" class="btn btn-primary me-2" disabled="@isSaving">
+            @if (isSaving)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+            }
+            <span class="bi bi-save"></span> 保存
+        </button>
+        <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@isSaving">
+            <span class="bi bi-x-circle"></span> キャンセル
+        </button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    
+    private Manual manual = new();
+    private List<Category> categories = new();
+    private bool isSaving = false;
+    private bool IsEdit => Id.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // カテゴリー一覧を読み込み
+        var categoriesEnumerable = await CategoryService.GetAllCategoriesAsync();
+        categories = categoriesEnumerable.ToList();
+
+        if (IsEdit)
+        {
+            var existingManual = await ManualService.GetManualByIdAsync(Id.Value);
+            if (existingManual is not null)
+            {
+                manual = existingManual;
+            }
+            else
+            {
+                Navigation.NavigateTo("/manuals");
+                return;
+            }
+        }
+        else
+        {
+            // 新規作成時はデフォルトカテゴリーを選択
+            var defaultCategory = categories.FirstOrDefault(c => c.IsDefault);
+            if (defaultCategory is not null)
+            {
+                manual.CategoryId = defaultCategory.CategoryId;
+            }
+            manual.OwnerId = CurrentUserService.UserId;
+        }
+    }
+
+    private async Task SaveManual()
+    {
+        isSaving = true;
+        try
+        {
+            if (IsEdit)
+            {
+                await ManualService.UpdateManualAsync(manual);
+            }
+            else
+            {
+                await ManualService.AddManualAsync(manual);
+            }
+            
+            Navigation.NavigateTo("/manuals");
+        }
+        catch (Exception ex)
+        {
+            // エラーハンドリング（実際のアプリケーションでは適切なエラー表示を行う）
+            Console.WriteLine($"エラー: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/manuals");
+    }
+}

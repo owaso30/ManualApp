@@ -1,0 +1,259 @@
+@page "/manuals/view/{ManualId:int}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using ManualApp.Components
+@inject ManualService ManualService
+@inject ContentService ContentService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+@inject IPdfService PdfService
+@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+
+<RadzenDialog />
+
+<h3>@manual?.Title</h3>
+
+<div class="mb-3">
+    <button class="btn btn-primary" @onclick="AddContent">
+        <span class="bi bi-plus-circle"></span> 新しいコンテンツ
+    </button>
+    <button class="btn btn-success ms-2" @onclick="DownloadPdf" disabled="@isGeneratingPdf">
+        @if (isGeneratingPdf)
+        {
+            <span class="spinner-border spinner-border-sm me-2"></span>
+        }
+        else
+        {
+            <span class="bi bi-file-earmark-pdf me-2"></span>
+        }
+        PDF出力
+    </button>
+    <button class="btn btn-secondary ms-2" @onclick="BackToList">
+        <span class="bi bi-arrow-left"></span> マニュアル一覧に戻る
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-4">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">読み込み中...</span>
+        </div>
+        <div class="mt-2">読み込み中...</div>
+    </div>
+}
+else if (contents.Any())
+{
+    <div class="row">
+        @for (int i = 0; i < contents.Count; i += 2)
+        {
+            <div class="col-12 col-lg-6 mb-4">
+                @if (i < contents.Count)
+                {
+                    @RenderContentCard(contents[i])
+                }
+            </div>
+            
+            @if (i + 1 < contents.Count)
+            {
+                <div class="col-12 col-lg-6 mb-4">
+                    @RenderContentCard(contents[i + 1])
+                </div>
+            }
+        }
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <span class="bi bi-info-circle"></span> コンテンツがありません。新しいコンテンツを追加してください。
+    </div>
+}
+
+@code {
+    [Parameter] public int ManualId { get; set; }
+    
+    private Manual? manual;
+    private List<Content> contents = new();
+    private bool isLoading = true;
+    private bool isGeneratingPdf = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            manual = await ManualService.GetManualByIdAsync(ManualId);
+            if (manual == null)
+            {
+                Navigation.NavigateTo("/manuals");
+                return;
+            }
+
+            var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
+            contents = contentsEnumerable.ToList();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private RenderFragment RenderContentCard(Content content) => @<div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">手順 @content.Order</h5>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary me-1" 
+                        @onclick="() => MoveUp(content.ContentId)"
+                        disabled="@(content.Order == 1)">
+                    前へ
+                </button>
+                <button class="btn btn-sm btn-outline-secondary me-1" 
+                        @onclick="() => MoveDown(content.ContentId)"
+                        disabled="@(content.Order == contents.Count)">
+                    後へ
+                </button>
+                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditContent(content.ContentId)">
+                    <span class="bi bi-pencil"></span> 編集
+                </button>
+                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteContent(content.ContentId)">
+                    <span class="bi bi-trash"></span> 削除
+                </button>
+            </div>
+        </div>
+        <div class="card-body d-flex flex-column p-0">
+            <div style="height: 340px; position: relative;">
+                @if (content.Image != null)
+                {
+                    <div class="text-center h-100 d-flex align-items-center justify-content-center" style="background-color: #f8f9fa;">
+                        <img src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
+                        <button class="btn btn-light btn-sm position-absolute top-0 end-0 m-2" 
+                                @onclick="() => ShowImagePopup(content.Image.FilePath)"
+                                style="z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                            <span class="bi bi-zoom-in"></span>
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa;">
+                        <span class="bi bi-image" style="font-size: 3rem;"></span>
+                        <p>画像なし</p>
+                    </div>
+                }
+            </div>
+            <div class="p-3" style="height: 170px; overflow-y: auto;">
+                <div class="content-text">
+                    @if (string.IsNullOrEmpty(content.Text))
+                    {
+                        <em class="text-muted">コンテンツがありません</em>
+                    }
+                    else
+                    {
+                        @((MarkupString)content.Text.Replace("\n", "<br/>"))
+                    }
+                </div>
+            </div>
+        </div>
+    </div>;
+
+    private void AddContent()
+    {
+        Navigation.NavigateTo($"/manuals/{ManualId}/content/edit");
+    }
+
+    private void EditContent(int contentId)
+    {
+        Navigation.NavigateTo($"/manuals/{ManualId}/content/edit/{contentId}");
+    }
+
+    private async Task DeleteContent(int contentId)
+    {
+        var result = await ContentService.DeleteContentAsync(contentId);
+        if (result)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task MoveUp(int contentId)
+    {
+        await MoveContent(contentId, ContentService.MoveContentUpAsync);
+    }
+
+    private async Task MoveDown(int contentId)
+    {
+        await MoveContent(contentId, ContentService.MoveContentDownAsync);
+    }
+
+    private async Task MoveContent(int contentId, Func<int, Task<bool>> moveAction)
+    {
+        try
+        {
+            var result = await moveAction(contentId);
+            if (result)
+            {
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"コンテンツ移動エラー: {ex.Message}");
+        }
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (manual == null || !contents.Any()) return;
+
+        isGeneratingPdf = true;
+        try
+        {
+            var pdfBytes = await PdfService.GenerateManualPdfAsync(manual, contents);
+            var fileName = $"{manual.Title?.Replace(" ", "_") ?? "マニュアル"}_{DateTime.Now:yyyyMMdd}.pdf";
+            
+            // JavaScriptでファイルダウンロードを実行
+            await JSRuntime.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(pdfBytes));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"PDF生成エラー: {ex.Message}");
+        }
+        finally
+        {
+            isGeneratingPdf = false;
+        }
+    }
+
+    private void BackToList()
+    {
+        Navigation.NavigateTo("/manuals");
+    }
+
+    private async Task ShowImagePopup(string imagePath)
+    {
+        // レスポンシブ対応のダイアログ設定
+        var dialogOptions = new DialogOptions() { 
+            Width = "95vw", 
+            Height = "95vh", 
+            Left = "2.5vw", 
+            Top = "2.5vh",
+            Resizable = true, 
+            Draggable = true,
+            CloseDialogOnEsc = true,
+            CloseDialogOnOverlayClick = true
+        };
+
+        await DialogService.OpenAsync("", ds =>
+            @<div class="text-center">
+                <img src="@imagePath" class="img-fluid" alt="拡大画像" style="max-height: 80vh; max-width: 100%; object-fit: contain;" />
+            </div>,
+            dialogOptions);
+    }
+}
