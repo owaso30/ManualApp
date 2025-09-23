@@ -2,9 +2,9 @@ function showAlert(message) {
     alert(message);
 }
 
-// モバイルデバイス判定
+// モバイルデバイス判定（992px以下をモバイルとする）
 window.isMobileDevice = function() {
-    return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return window.innerWidth <= 992 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
 // PDFファイルダウンロード機能
@@ -38,4 +38,17 @@ window.downloadFile = function(fileName, base64Data) {
 // 接続状態チェック
 window.isBlazorConnected = function() {
     return window.Blazor && window.Blazor._internal && window.Blazor._internal.navigationManager;
+};
+
+// セッションストレージのヘルパー関数
+window.setSessionStorage = function(key, value) {
+    sessionStorage.setItem(key, value);
+};
+
+window.getSessionStorage = function(key) {
+    return sessionStorage.getItem(key);
+};
+
+window.removeSessionStorage = function(key) {
+    sessionStorage.removeItem(key);
 };

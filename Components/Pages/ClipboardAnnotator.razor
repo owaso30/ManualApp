@@ -1,9 +1,24 @@
 @rendermode InteractiveServer
 @inject IJSRuntime JS
 @inject DialogService DialogService
+@inject NavigationManager Navigation
 
-<div class="row">
-    <div class="col-md-9">
+<!-- モバイル制限メッセージ -->
+<div class="mobile-restriction-message">
+    <div class="mobile-restriction-content">
+        <i class="fas fa-mobile-alt mobile-restriction-icon"></i>
+        <div class="mobile-restriction-title">モバイル表示では利用できません</div>
+        <div class="mobile-restriction-text">
+            この機能はデスクトップ表示でのみご利用いただけます。<br>
+            画面幅を広げるか、デスクトップブラウザでアクセスしてください。
+        </div>
+        <a href="/" class="btn btn-primary">ホームに戻る</a>
+    </div>
+</div>
+
+<div class="mobile-restricted-content">
+    <div class="row">
+        <div class="col-md-9">
         <canvas id="annotCanvas" width="1080" height="540" style="border:1px solid #ddd; max-width:100%; cursor: crosshair;"></canvas>
     </div>
     <div class="col-md-3">
@@ -93,6 +108,7 @@
         </div>
     </div>
 </div>
+</div>
 
 <p class="text-muted mt-2">@_status</p>
 
@@ -103,9 +119,28 @@
     string _status = "Ctrl+Vまたは『貼り付け』で画像を読み込んでください。";
     string _text = "ここを選択";
 
+    private async Task CheckMobileAndRedirect()
+    {
+        try
+        {
+            var isMobile = await JS.InvokeAsync<bool>("isMobileDevice");
+            if (isMobile)
+            {
+                Navigation.NavigateTo("/");
+            }
+        }
+        catch
+        {
+            // JavaScript実行に失敗した場合は何もしない
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+
+        // モバイル表示の場合はホームページにリダイレクト
+        await CheckMobileAndRedirect();
 
         // グローバル関数として定義されたJavaScript関数を直接呼び出し
         await JS.InvokeVoidAsync("initCanvas", "annotCanvas");

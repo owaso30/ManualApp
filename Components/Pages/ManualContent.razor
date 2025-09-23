@@ -23,7 +23,7 @@
             </label>
         </div>
         <div class="d-flex">
-            <button class="btn btn-primary" @onclick="AddContent">
+            <button class="btn btn-primary btn-mobile-hidden" @onclick="AddContent">
                 <span class="bi bi-plus-circle"></span> 追加
             </button>
             <button class="btn btn-success ms-2" @onclick="DownloadPdf" disabled="@isGeneratingPdf">
@@ -118,6 +118,9 @@
         isLoading = true;
         try
         {
+            // セッションストレージからソート状態を復元
+            await RestoreSortState();
+            
             manual = await ManualService.GetManualByIdAsync(ManualId);
             if (manual == null)
             {
@@ -150,8 +153,36 @@
     private async Task OnSortChanged(ChangeEventArgs e)
     {
         isDescending = (bool)e.Value!;
+        
+        // セッションストレージにソート状態を保存
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setSessionStorage", "manualContent_sortDescending", isDescending.ToString().ToLower());
+        }
+        catch
+        {
+            // セッションストレージへの保存に失敗した場合は無視
+        }
+        
         SortContents();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RestoreSortState()
+    {
+        try
+        {
+            var savedSortState = await JSRuntime.InvokeAsync<string>("getSessionStorage", "manualContent_sortDescending");
+            if (!string.IsNullOrEmpty(savedSortState) && bool.TryParse(savedSortState, out bool savedIsDescending))
+            {
+                isDescending = savedIsDescending;
+            }
+        }
+        catch
+        {
+            // セッションストレージからの復元に失敗した場合はデフォルト値を使用
+            isDescending = false;
+        }
     }
 
     private RenderFragment RenderContentCard(Content content) => @<div class="card h-100">
@@ -168,10 +199,10 @@
                         disabled="@(content.Order == contents.Count)">
                     後へ
                 </button>
-                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditContent(content.ContentId)">
+                <button class="btn btn-sm btn-outline-primary me-1 btn-mobile-hidden" @onclick="() => EditContent(content.ContentId)">
                     <span class="bi bi-pencil"></span> 編集
                 </button>
-                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteContent(content.ContentId)">
+                <button class="btn btn-sm btn-outline-danger btn-mobile-hidden" @onclick="() => DeleteContent(content.ContentId)">
                     <span class="bi bi-trash"></span> 削除
                 </button>
             </div>

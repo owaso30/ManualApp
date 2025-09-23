@@ -13,7 +13,20 @@
 
 <RadzenDialog />
 
-<div style="position: relative;">
+<!-- モバイル制限メッセージ -->
+<div class="mobile-restriction-message">
+    <div class="mobile-restriction-content">
+        <i class="fas fa-mobile-alt mobile-restriction-icon"></i>
+        <div class="mobile-restriction-title">モバイル表示では利用できません</div>
+        <div class="mobile-restriction-text">
+            この機能はデスクトップ表示でのみご利用いただけます。<br>
+            画面幅を広げるか、デスクトップブラウザでアクセスしてください。
+        </div>
+        <a href="/" class="btn btn-primary">ホームに戻る</a>
+    </div>
+</div>
+
+<div class="mobile-restricted-content" style="position: relative;">
     <h3>@(IsEdit ? "コンテンツ編集" : "コンテンツ追加")</h3>
     
     @if (!IsEdit && existingContents.Any())
@@ -245,11 +258,29 @@
     private bool isLoading = true;
     private bool IsEdit => Id.HasValue;
     
+    private async Task CheckMobileAndRedirect()
+    {
+        try
+        {
+            var isMobile = await JSRuntime.InvokeAsync<bool>("isMobileDevice");
+            if (isMobile)
+            {
+                Navigation.NavigateTo("/");
+            }
+        }
+        catch
+        {
+            // JavaScript実行に失敗した場合は何もしない
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            // モバイル表示の場合はホームページにリダイレクト
+            await CheckMobileAndRedirect();
+            
             try
             {
                 manual = await ManualService.GetManualByIdAsync(ManualId);

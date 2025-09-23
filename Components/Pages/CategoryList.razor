@@ -3,12 +3,26 @@
 @attribute [Authorize]
 @inject CategoryService CategoryService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
-<div style="position: relative;">
+<!-- モバイル制限メッセージ -->
+<div class="mobile-restriction-message">
+    <div class="mobile-restriction-content">
+        <i class="fas fa-mobile-alt mobile-restriction-icon"></i>
+        <div class="mobile-restriction-title">モバイル表示では利用できません</div>
+        <div class="mobile-restriction-text">
+            この機能はデスクトップ表示でのみご利用いただけます。<br>
+            画面幅を広げるか、デスクトップブラウザでアクセスしてください。
+        </div>
+        <a href="/" class="btn btn-primary">ホームに戻る</a>
+    </div>
+</div>
+
+<div class="mobile-restricted-content" style="position: relative;">
     <h3>カテゴリー管理</h3>
 
     <div class="mb-3 d-flex justify-content-end">
-        <button class="btn btn-primary" @onclick="CreateCategory">
+        <button class="btn btn-primary btn-mobile-hidden" @onclick="CreateCategory">
             <span class="bi bi-plus-circle"></span> 追加
         </button>
     </div>
@@ -33,12 +47,12 @@
                             <td>@(category.Description ?? "-")</td>
                             <td>@category.Manuals.Count</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary me-2" 
+                                <button class="btn btn-sm btn-outline-primary me-2 btn-mobile-hidden" 
                                         @onclick="() => EditCategory(category.CategoryId)"
                                         disabled="@category.IsDefault">
                                     <span class="bi bi-pencil"></span> 編集
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" 
+                                <button class="btn btn-sm btn-outline-danger btn-mobile-hidden" 
                                         @onclick="() => DeleteCategory(category.CategoryId)"
                                         disabled="@(category.IsDefault)">
                                     <span class="bi bi-trash"></span> 削除
@@ -78,8 +92,26 @@
     {
         if (firstRender)
         {
+            // モバイル表示の場合はホームページにリダイレクト
+            await CheckMobileAndRedirect();
             await LoadCategories();
             StateHasChanged();
+        }
+    }
+
+    private async Task CheckMobileAndRedirect()
+    {
+        try
+        {
+            var isMobile = await JSRuntime.InvokeAsync<bool>("isMobileDevice");
+            if (isMobile)
+            {
+                Navigation.NavigateTo("/");
+            }
+        }
+        catch
+        {
+            // JavaScript実行に失敗した場合は何もしない
         }
     }
 
