@@ -34,7 +34,7 @@
     var latestContent = existingContents.First();
     <div class="mb-4 d-none d-lg-block">
         <div class="row">
-            <div class="col-6">
+            <div class="col-12">
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #17a2b8; color: white;">
                         <h5 class="mb-0">手順 @(latestContent.Order + 1)（追加する手順）</h5>
@@ -108,42 +108,6 @@
                     </div>
                 </div>
             </div>
-            <div class="col-6">
-                <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center" style="min-height: 49px;">
-                        <h5 class="mb-0">手順 @(latestContent.Order)（直前の手順）</h5>
-                    </div>
-                    <div class="card-body d-flex flex-column p-0">
-                        <div style="height: 480px; position: relative; overflow: hidden;">
-                            @if (latestContent.Image != null)
-                            {
-                                <div class="text-center h-100 d-flex align-items-center justify-content-center" style="background-color: #f8f9fa; padding: 10px;">
-                                    <img src="@latestContent.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa; padding: 10px;">
-                                    <span class="bi bi-image" style="font-size: 3rem;"></span>
-                                    <p>画像なし</p>
-                                </div>
-                            }
-                        </div>
-                        <div class="p-3" style="height: 250px; overflow-y: auto;">
-                            <div class="content-text">
-                                @if (string.IsNullOrEmpty(latestContent.Text))
-                                {
-                                    <em class="text-muted">コンテンツがありません</em>
-                                }
-                                else
-                                {
-                                    @((MarkupString)latestContent.Text.Replace("\n", "<br/>"))
-                                }
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 }
@@ -156,17 +120,17 @@
         <div class="row justify-content-center">
             <div class="col-12 col-lg-6">
                 <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #ffeaa7; color: #2d3436;">
-                        <h5 class="mb-0">手順 @content.Order（編集中）</h5>
+                    <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #17a2b8; color: white;">
+                        <h5 class="mb-0">手順 @content.Order（@(IsEdit ? "編集中" : "追加する手順")）</h5>
                         <div>
-                            <button type="submit" class="btn btn-sm me-2" style="background-color: #00b894; border: 1px solid white; color: white;" disabled="@isSaving" form="content-form">
+                            <button type="submit" class="btn btn-sm me-2" style="background-color: #28a745; border: 1px solid white; color: white;" disabled="@isSaving" form="content-form">
                                 @if (isSaving)
                                 {
                                     <span class="spinner-border spinner-border-sm me-1"></span>
                                 }
                                 <span class="bi bi-save"></span> 保存
                             </button>
-                            <button type="button" class="btn btn-sm" style="background-color: #636e72; border: 1px solid white; color: white;" @onclick="Cancel" disabled="@isSaving">
+                            <button type="button" class="btn btn-sm" style="background-color: #6c757d; border: 1px solid white; color: white;" @onclick="Cancel" disabled="@isSaving">
                                 <span class="bi bi-x-circle"></span> 取消
                             </button>
                         </div>
@@ -309,6 +273,8 @@
                 else
                 {
                     content.ManualId = ManualId;
+                    // 新規作成時は手順番号を1に設定
+                    content.Order = 1;
                 }
             }
             finally
@@ -565,7 +531,7 @@
         
         var result = await DialogService.OpenAsync<ClipboardAnnotator>("画像加工", 
             new Dictionary<string, object> { { "HasImage", hasImage } },
-            new DialogOptions() { Width = "95vw", Height = "95vh", Left = "-15vw", Resizable = true, Draggable = true });
+            new DialogOptions() { Width = "80vw", Height = "90vh", Left = "-210px", Resizable = true, Draggable = true });
 
         if (result != null)
         {

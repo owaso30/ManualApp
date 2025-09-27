@@ -93,9 +93,9 @@ h1:focus {
 
 @media (min-width: 993px) {
     .rz-dialog {
-        width: 95vw !important;
+        width: 80vw !important;
         height: 95vh !important;
-        left: -250px !important;
+        left: -75px !important;
         top: 2.5vh !important;
         max-width: none !important;
         max-height: none !important;
