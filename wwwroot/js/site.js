@@ -2,9 +2,9 @@ function showAlert(message) {
     alert(message);
 }
 
-// モバイルデバイス判定（992px以下をモバイルとする）
+// モバイルデバイス判定（画面幅のみで判定）
 window.isMobileDevice = function() {
-    return window.innerWidth <= 992 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return window.innerWidth <= 992;
 };
 
 // PDFファイルダウンロード機能
