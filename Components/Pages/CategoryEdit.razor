@@ -4,6 +4,9 @@
 @attribute [Authorize]
 @inject CategoryService CategoryService
 @inject NavigationManager Navigation
+@inject ICurrentUserService CurrentUserService
+@inject IGroupService GroupService
+@using ManualApp.Models
 
 <h3>@(IsEdit ? "カテゴリー編集" : "新しいカテゴリー")</h3>
 
@@ -20,15 +23,25 @@
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-8">
-            <div class="mb-3">
-                <label for="description" class="form-label">説明</label>
-                <InputTextArea id="description" class="form-control" rows="3" @bind-Value="category.Description" />
-                <ValidationMessage For="@(() => category.Description)" />
+
+    @if (CanEditAllowPartialEdit())
+    {
+        <div class="row">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <div class="form-check">
+                        <InputCheckbox id="allowPartialEdit" class="form-check-input" @bind-Value="category.AllowPartialEdit" />
+                        <label for="allowPartialEdit" class="form-check-label">
+                            一部編集権限ユーザーでも編集可能
+                        </label>
+                        <div class="form-text">
+                            このオプションを有効にすると、グループ内の「一部編集可」権限を持つユーザーもこのカテゴリーを編集できます。
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
+    }
 
     <div class="mb-3">
         <button type="submit" class="btn btn-primary me-2" disabled="@isSaving">
@@ -50,23 +63,52 @@
     private Category category = new();
     private bool isSaving = false;
     private bool IsEdit => Id.HasValue;
+    private GroupMembership? userMembership;
 
     protected override async Task OnInitializedAsync()
     {
+        // まずグループメンバーシップを取得（これによりModeServiceのキャッシュが設定される）
+        try
+        {
+            userMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+        }
+        catch (Exception)
+        {
+            // エラーが発生した場合はnullのまま
+            userMembership = null;
+        }
+
+        // 権限チェック（一部編集可と閲覧可の場合はリダイレクト）
+        if (!CanEditOrCreate())
+        {
+            Navigation.NavigateTo("/categories");
+            return;
+        }
+
         if (IsEdit)
         {
-            var existingCategory = await CategoryService.GetCategoryByIdAsync(Id.Value);
-            if (existingCategory is not null)
+            try
             {
-                if (existingCategory.IsDefault)
+                // グループメンバーシップ取得後にカテゴリーを取得（ModeServiceのキャッシュが利用される）
+                var existingCategory = await CategoryService.GetCategoryByIdAsync(Id.Value);
+                if (existingCategory is not null)
+                {
+                    if (existingCategory.IsDefault)
+                    {
+                        Navigation.NavigateTo("/categories");
+                        return;
+                    }
+                    category = existingCategory;
+                }
+                else
                 {
                     Navigation.NavigateTo("/categories");
                     return;
                 }
-                category = existingCategory;
             }
-            else
+            catch (Exception)
             {
+                // カテゴリー取得エラーの場合は一覧画面に戻る
                 Navigation.NavigateTo("/categories");
                 return;
             }
@@ -103,5 +145,53 @@
     private void Cancel()
     {
         Navigation.NavigateTo("/categories");
+    }
+
+    private bool CanEditAllowPartialEdit()
+    {
+        // 管理者は常に編集可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // 自分のカテゴリーは編集可能
+        if (category.OwnerId == CurrentUserService.UserId)
+            return true;
+
+        // グループ機能の権限チェック
+        if (userMembership != null)
+        {
+            // 編集可権限の場合は編集可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可権限の場合、AllowPartialEditがtrueなら編集可能
+            if (userMembership.Permission == GroupPermission.PartialEdit && category.AllowPartialEdit)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool CanEditOrCreate()
+    {
+        // 管理者は常に編集・作成可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は編集・作成可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可と閲覧可の場合は編集・作成不可
+            if (userMembership.Permission == GroupPermission.PartialEdit || 
+                userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        // グループに所属していない場合は編集・作成可能
+        return true;
     }
 }

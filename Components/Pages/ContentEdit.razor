@@ -3,13 +3,17 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @implements IDisposable
+@using ManualApp.Services
+@using ManualApp.Models
 @inject ContentService ContentService
 @inject ManualService ManualService
+@inject CategoryService CategoryService
 @inject ICurrentUserService CurrentUserService
 @inject S3Service S3Service
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject DialogService DialogService
+@inject IGroupService GroupService
 
 <RadzenDialog />
 
@@ -58,17 +62,28 @@
                                  @onpaste="OnPaste" 
                                  @onkeydown="OnKeyDown"
                                  tabindex="0">
-                                @if (content.Image != null)
+                                @if (content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath))
                                 {
                                     <div style="flex: 1; display: flex; align-items: center; justify-content: center; max-height: calc(100% - 120px);">
-                                        <img id="content-image" src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
+                                        <img id="content-image" src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" 
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                        <div class="text-muted" style="flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 2rem;">
+                                            <div style="width: 80px; height: 80px; border: 2px dashed #dee2e6; border-radius: 12px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; margin-bottom: 1rem;">
+                                                <span class="bi bi-cloud-upload" style="font-size: 2rem; color: #6c757d;"></span>
+                                            </div>
+                                            <h6 class="mb-2" style="color: #495057; font-weight: 500;">画像をアップロード</h6>
+                                            <p class="mb-0" style="font-size: 0.875rem; color: #6c757d;">ファイルを選択するか、ドラッグ&ドロップ</p>
+                                        </div>
                                     </div>
                                 }
                                 else
                                 {
-                                    <div class="text-muted" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                                        <span class="bi bi-image" style="font-size: 3rem;"></span>
-                                        <p>画像なし</p>
+                                    <div class="text-muted" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem;">
+                                        <div style="width: 80px; height: 80px; border: 2px dashed #dee2e6; border-radius: 12px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; margin-bottom: 1rem;">
+                                            <span class="bi bi-cloud-upload" style="font-size: 2rem; color: #6c757d;"></span>
+                                        </div>
+                                        <h6 class="mb-2" style="color: #495057; font-weight: 500;">画像をアップロード</h6>
+                                        <p class="mb-0" style="font-size: 0.875rem; color: #6c757d;">ファイルを選択するか、ドラッグ&ドロップ</p>
                                     </div>
                                 }
                                 
@@ -115,7 +130,7 @@
                     </div>
                     <div class="card-body d-flex flex-column p-0">
                         <div style="height: 340px; position: relative;">
-                            @if (latestContent.Image != null)
+                            @if (latestContent.Image != null && !string.IsNullOrEmpty(latestContent.Image.FilePath))
                             {
                                 <div class="text-center h-100 d-flex align-items-center justify-content-center" style="background-color: #f8f9fa;">
                                     <img src="@latestContent.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
@@ -123,9 +138,12 @@
                             }
                             else
                             {
-                                <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa;">
-                                    <span class="bi bi-image" style="font-size: 3rem;"></span>
-                                    <p>画像なし</p>
+                                <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa; padding: 2rem;">
+                                    <div style="width: 60px; height: 60px; border: 2px dashed #dee2e6; border-radius: 8px; display: flex; align-items: center; justify-content: center; background-color: white; margin-bottom: 1rem;">
+                                        <span class="bi bi-image" style="font-size: 1.5rem; color: #6c757d;"></span>
+                                    </div>
+                                    <h6 class="mb-1" style="color: #495057; font-weight: 500; font-size: 0.9rem;">画像なし</h6>
+                                    <p class="mb-0" style="font-size: 0.75rem; color: #6c757d;">画像が設定されていません</p>
                                 </div>
                             }
                         </div>
@@ -178,17 +196,28 @@
                                  @onpaste="OnPaste" 
                                  @onkeydown="OnKeyDown"
                                  tabindex="0">
-                                @if (content.Image != null)
+                                @if (content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath))
                                 {
                                     <div style="flex: 1; display: flex; align-items: center; justify-content: center; max-height: calc(100% - 120px);">
-                                        <img id="content-image" src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
+                                        <img id="content-image" src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" 
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                        <div class="text-muted" style="flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 2rem;">
+                                            <div style="width: 80px; height: 80px; border: 2px dashed #dee2e6; border-radius: 12px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; margin-bottom: 1rem;">
+                                                <span class="bi bi-cloud-upload" style="font-size: 2rem; color: #6c757d;"></span>
+                                            </div>
+                                            <h6 class="mb-2" style="color: #495057; font-weight: 500;">画像をアップロード</h6>
+                                            <p class="mb-0" style="font-size: 0.875rem; color: #6c757d;">ファイルを選択するか、ドラッグ&ドロップ</p>
+                                        </div>
                                     </div>
                                 }
                                 else
                                 {
-                                    <div class="text-muted" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                                        <span class="bi bi-image" style="font-size: 3rem;"></span>
-                                        <p>画像なし</p>
+                                    <div class="text-muted" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem;">
+                                        <div style="width: 80px; height: 80px; border: 2px dashed #dee2e6; border-radius: 12px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; margin-bottom: 1rem;">
+                                            <span class="bi bi-cloud-upload" style="font-size: 2rem; color: #6c757d;"></span>
+                                        </div>
+                                        <h6 class="mb-2" style="color: #495057; font-weight: 500;">画像をアップロード</h6>
+                                        <p class="mb-0" style="font-size: 0.875rem; color: #6c757d;">ファイルを選択するか、ドラッグ&ドロップ</p>
                                     </div>
                                 }
                                 
@@ -235,12 +264,15 @@
 
     @if (isLoading)
     {
-        <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: white; display: flex; align-items: flex-start; justify-content: center; z-index: 9999; padding-top: 200px;">
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: white; display: flex; align-items: center; justify-content: center; z-index: 9999;">
             <div class="text-center">
                 <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
                     <span class="visually-hidden">読み込み中...</span>
                 </div>
-                <div class="mt-3 fs-5">読み込み中...</div>
+                <div class="mt-3">
+                    <h5>読み込み中...</h5>
+                    <p class="text-muted">しばらくお待ちください</p>
+                </div>
             </div>
         </div>
     }
@@ -250,7 +282,11 @@
     [Parameter] public int ManualId { get; set; }
     [Parameter] public int? Id { get; set; }
     
-    private Content content = new();
+    private Content content = new() 
+    { 
+        ManualId = 0, // デバッグ用に初期値を明示
+        Image = new Image { FilePath = "", ImageId = 0 } // 空のImageオブジェクトで初期化
+    };
     private Manual? manual;
     private List<Content> existingContents = new();
     private bool isSaving = false;
@@ -258,18 +294,170 @@
     private bool isLoading = true;
     private bool IsEdit => Id.HasValue;
     
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine($"ContentEdit OnInitializedAsync: ManualId = {ManualId}");
+        
+        // ManualIdが0以下の場合は無効
+        if (ManualId <= 0)
+        {
+            Console.WriteLine("エラー: ManualIdが無効です");
+            Navigation.NavigateTo("/manuals");
+            return;
+        }
+        
+        // 権限チェックのみをOnInitializedAsyncで実行（画面表示前にリダイレクト）
+        Console.WriteLine("OnInitializedAsync: 権限チェックを開始");
+        var hasPermission = await CheckUserPermissions();
+        Console.WriteLine($"OnInitializedAsync: 権限チェック結果 = {hasPermission}");
+        
+        if (!hasPermission)
+        {
+            Console.WriteLine("エラー: 権限がありません");
+            Navigation.NavigateTo($"/manuals/view/{ManualId}");
+            return;
+        }
+
+        // 既存の手順を取得（UI表示のために必要）
+        var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
+        existingContents = contentsEnumerable.OrderByDescending(c => c.Order).ToList();
+        Console.WriteLine($"OnInitializedAsync: 既存の手順数 = {existingContents.Count}");
+
+        Console.WriteLine("OnInitializedAsync: 権限チェック成功、処理を続行");
+        // isLoadingはOnAfterRenderAsyncの最後までtrueのままにする
+        
+        // 状態を同期してOnAfterRenderAsyncでmanualが参照できるようにする
+        StateHasChanged();
+    }
+    
+    private async Task<bool> CheckUserPermissions()
+    {
+        try
+        {
+            Console.WriteLine($"権限チェック開始: ManualId = {ManualId}");
+            
+            // 権限チェック用にmanualを取得し、クラス変数にも保存
+            manual = await ManualService.GetManualByIdAsync(ManualId);
+            Console.WriteLine($"権限チェック用Manual取得: manual = {(manual != null ? "存在" : "null")}");
+            
+            if (manual == null) 
+            {
+                Console.WriteLine("権限チェック失敗: Manualが見つかりません");
+                return false;
+            }
+
+            var currentUserId = CurrentUserService.UserId;
+            Console.WriteLine($"現在のユーザーID: {currentUserId}");
+            Console.WriteLine($"ManualのOwnerId: {manual.OwnerId}");
+
+            // マニュアルの所有者の場合は編集可能
+            if (manual.OwnerId == currentUserId)
+            {
+                Console.WriteLine("権限チェック成功: マニュアルの所有者です");
+                return true;
+            }
+
+            // グループメンバーの場合、権限をチェック
+            var userMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+            Console.WriteLine($"ユーザーメンバーシップ: userMembership = {(userMembership != null ? "存在" : "null")}");
+            
+            if (userMembership != null && userMembership.Group != null)
+            {
+                Console.WriteLine($"グループID: {userMembership.Group.GroupId}");
+                Console.WriteLine($"グループ権限: {userMembership.Permission}");
+                
+                // グループのマニュアルの場合、権限をチェック
+                if (manual.OwnerId == userMembership.Group.GroupId.ToString())
+                {
+                    Console.WriteLine("グループのマニュアルです");
+                    
+                    if (userMembership.Permission == GroupPermission.ViewOnly)
+                    {
+                        Console.WriteLine("権限チェック失敗: ViewOnly権限です");
+                        return false;
+                    }
+                    else if (userMembership.Permission == GroupPermission.PartialEdit)
+                    {
+                        Console.WriteLine("PartialEdit権限、カテゴリー権限をチェック");
+                        // 一部編集可の場合、カテゴリーのAllowPartialEditをチェック
+                        var categoryResult = await CheckCategoryPermission();
+                        Console.WriteLine($"カテゴリー権限チェック結果: {categoryResult}");
+                        return categoryResult;
+                    }
+                    else
+                    {
+                        Console.WriteLine("権限チェック成功: 編集可能権限です");
+                        // 編集可の場合は常に編集可能
+                        return true;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("権限チェック失敗: グループのマニュアルではありません");
+                    return false;
+                }
+            }
+            else
+            {
+                Console.WriteLine("権限チェック失敗: グループメンバーシップがありません");
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"権限チェックエラー: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task<bool> CheckCategoryPermission()
+    {
+        try
+        {
+            Console.WriteLine("カテゴリー権限チェック開始");
+            
+            // manualは既にCheckUserPermissionsで取得済み
+            Console.WriteLine($"カテゴリー権限チェック用Manual: manual = {(manual != null ? "存在" : "null")}");
+            
+            if (manual?.CategoryId == null) 
+            {
+                Console.WriteLine("カテゴリー権限チェック失敗: CategoryIdがnullです");
+                return false;
+            }
+            
+            Console.WriteLine($"カテゴリーID: {manual.CategoryId}");
+            
+            // カテゴリーのAllowPartialEditをチェック
+            var category = await CategoryService.GetCategoryByIdAsync(manual.CategoryId);
+            Console.WriteLine($"カテゴリー取得: category = {(category != null ? "存在" : "null")}");
+            Console.WriteLine($"AllowPartialEdit: {category?.AllowPartialEdit}");
+            
+            var result = category?.AllowPartialEdit ?? false;
+            Console.WriteLine($"カテゴリー権限チェック結果: {result}");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"カテゴリー権限チェックエラー: {ex.Message}");
+            return false;
+        }
+    }
+    
     private async Task CheckMobileAndRedirect()
     {
         try
         {
             var isMobile = await JSRuntime.InvokeAsync<bool>("isMobileDevice");
+            Console.WriteLine($"CheckMobileAndRedirect: isMobile = {isMobile}");
             if (isMobile)
             {
+                Console.WriteLine("モバイルデバイス検出: ホームページにリダイレクト");
                 Navigation.NavigateTo("/");
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"CheckMobileAndRedirect エラー: {ex.Message}");
             // JavaScript実行に失敗した場合は何もしない
         }
     }
@@ -278,27 +466,52 @@
     {
         if (firstRender)
         {
+            Console.WriteLine($"OnAfterRenderAsync開始: ManualId = {ManualId}, IsEdit = {IsEdit}");
+            Console.WriteLine($"OnAfterRenderAsync開始時: manual = {(manual != null ? "存在" : "null")}");
+            Console.WriteLine($"OnAfterRenderAsync開始時: isLoading = {isLoading}");
+            
             // モバイル表示の場合はホームページにリダイレクト
             await CheckMobileAndRedirect();
+            Console.WriteLine("CheckMobileAndRedirect完了");
             
-            try
+            // manualがnullの場合は再取得（OnInitializedAsyncとOnAfterRenderAsyncが異なるインスタンスの場合がある）
+            if (manual == null)
             {
+                Console.WriteLine("OnAfterRenderAsync: manualがnullのため再取得");
+                
+                // DbContextの同時実行エラーを回避するために少し待機
+                await Task.Delay(100);
+                
                 manual = await ManualService.GetManualByIdAsync(ManualId);
+                Console.WriteLine($"OnAfterRenderAsync: Manual再取得結果 = {(manual != null ? "存在" : "null")}");
+                
                 if (manual == null)
                 {
+                    Console.WriteLine("エラー: Manualの再取得に失敗");
                     Navigation.NavigateTo("/manuals");
                     return;
                 }
-
-                var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
-                existingContents = contentsEnumerable.OrderByDescending(c => c.Order).ToList();
+            }
+            else
+            {
+                Console.WriteLine($"OnAfterRenderAsync: manual = 存在（再取得不要）");
+            }
+            
+            Console.WriteLine("Manual確認完了、処理を続行");
+            
+            try
+            {
+                // 既存の手順はOnInitializedAsyncで既に取得済み
+                Console.WriteLine($"OnAfterRenderAsync: 既存の手順数 = {existingContents.Count}");
 
                 if (IsEdit && Id.HasValue)
                 {
                     var existingContent = await ContentService.GetContentByIdAsync(Id.Value);
                     if (existingContent is not null)
                     {
+                        // 既存のcontentオブジェクトを完全に置き換え
                         content = existingContent;
+                        Console.WriteLine("編集モード: 既存のコンテンツを読み込み");
                     }
                     else
                     {
@@ -308,9 +521,33 @@
                 }
                 else
                 {
-                    content.ManualId = ManualId;
-                    // 新規作成時は手順番号を1に設定
-                    content.Order = 1;
+                    Console.WriteLine("新規作成時の初期化を開始");
+                    // 新規作成時の初期化
+                    var userId = CurrentUserService.UserId;
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        Console.WriteLine("警告: CurrentUserService.UserId が null または空です");
+                        Navigation.NavigateTo($"/manuals/view/{ManualId}");
+                        return;
+                    }
+                    
+                    Console.WriteLine($"新規作成時の初期化: ManualId = {ManualId}, UserId = {userId}");
+                    Console.WriteLine($"初期化前のcontent.ManualId = {content.ManualId}");
+                    
+                    content = new Content
+                    {
+                        ManualId = ManualId,
+                        Order = 1, // 一時的な値、保存時に正しい値が設定される
+                        CreatorId = userId,
+                        CreatedAt = DateTime.UtcNow,
+                        Image = new Image
+                        {
+                            FilePath = "", // 空文字列で初期化
+                            ImageId = 0 // 新しいImageオブジェクトとして初期化
+                        }
+                    };
+                    
+                    Console.WriteLine($"Content初期化後: content.ManualId = {content.ManualId}");
                 }
             }
             finally
@@ -326,6 +563,8 @@
         isSaving = true;
         try
         {
+            Console.WriteLine($"SaveContent開始: IsEdit = {IsEdit}, content.ManualId = {content.ManualId}, ManualId = {ManualId}");
+            
             if (IsEdit)
             {
                 await ContentService.UpdateContentAsync(content);
@@ -474,7 +713,7 @@
             content.Image = new Image
             {
                 FilePath = s3Url,
-                ContentId = content.ContentId
+                ContentId = content.ContentId > 0 ? content.ContentId : 0 // 新規作成時は0
             };
         }
         catch (Exception ex)
@@ -493,7 +732,15 @@
         if (content.Image != null)
         {
             await S3Service.DeleteFileAsync(content.Image.FilePath);
-            content.Image = null;
+            // 新規作成時は空のImageオブジェクトを設定、編集時はnullに設定
+            if (IsEdit)
+            {
+                content.Image = null;
+            }
+            else
+            {
+                content.Image = new Image { FilePath = "", ImageId = 0 };
+            }
         }
     }
 
@@ -510,7 +757,11 @@
 
     private async Task OpenImageAnnotator()
     {
-        bool hasImage = content.Image != null;
+        Console.WriteLine($"OpenImageAnnotator呼び出し: content.Image = {(content.Image != null ? "存在" : "null")}");
+        Console.WriteLine($"content.Image.FilePath = '{content.Image?.FilePath ?? "null"}'");
+        
+        bool hasImage = content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath);
+        Console.WriteLine($"hasImage = {hasImage}");
         
         if (hasImage)
         {
@@ -561,6 +812,8 @@
         if (result != null)
         {
             var processedImageData = result.ToString();
+            Console.WriteLine($"ClipboardAnnotatorから戻ってきました: result = {(result != null ? "存在" : "null")}");
+            Console.WriteLine($"processedImageData = {(string.IsNullOrEmpty(processedImageData) ? "空" : "存在")}");
             
             if (!string.IsNullOrEmpty(processedImageData))
             {
@@ -569,9 +822,11 @@
                     // DataURLの形式をチェック
                     if (processedImageData.StartsWith("data:image/"))
                     {
+                        Console.WriteLine("加工画像をアップロードします");
                         var bytes = Convert.FromBase64String(processedImageData.Split(',')[1]);
                         using var stream = new MemoryStream(bytes);
                         await UploadImageFromStream(stream, $"processed_{Guid.NewGuid()}.png");
+                        Console.WriteLine("加工画像のアップロード完了");
                     }
                 }
                 catch (Exception ex)
@@ -579,6 +834,10 @@
                     Console.WriteLine($"加工画像のアップロードエラー: {ex.Message}");
                 }
             }
+        }
+        else
+        {
+            Console.WriteLine("ClipboardAnnotatorからnullが返されました");
         }
     }
 }

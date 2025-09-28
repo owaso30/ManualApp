@@ -108,6 +108,7 @@ builder.Services.AddScoped<S3Service>();
 builder.Services.AddScoped<ManualService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<ContentService>();
+builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
@@ -115,23 +116,35 @@ builder.Services.AddScoped<IEmailSender, ProductionEmailSender>();
 builder.Services.AddScoped<IdentityErrorDescriber, JapaneseIdentityErrorDescriber>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IModeService, ModeService>();
+
+// セッションサポート
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+});
 
 // --------------------
 // 認可ポリシー
 // --------------------
-builder.Services.AddScoped<OwnershipInterceptor>();
-builder.Services.AddDbContext<ManualAppContext>((sp, options) =>
+// builder.Services.AddScoped<OwnershipInterceptor>();
+builder.Services.AddDbContext<ManualAppContext>(options =>
 {
-    var interceptor = sp.GetRequiredService<OwnershipInterceptor>();
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
-           .AddInterceptors(interceptor);
-});
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+}, ServiceLifetime.Transient);
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("IsManualOwner", policy =>
         policy.Requirements.Add(new ManualOwnerRequirement()));
+    options.AddPolicy("GroupAccess", policy =>
+        policy.Requirements.Add(new GroupAccessRequirement()));
 });
-builder.Services.AddScoped<IAuthorizationHandler, ManualOwnerHandler>();
+// builder.Services.AddScoped<IAuthorizationHandler, ManualOwnerHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, GroupAccessHandler>();
 
 // --------------------
 // Build App
@@ -162,6 +175,7 @@ app.UseCookiePolicy(new CookiePolicyOptions
 // 認証・認可
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseSession();
 
 // ヘルスチェック
 app.MapGet("/healthz", () => Results.Ok("OK"));

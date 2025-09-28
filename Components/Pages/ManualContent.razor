@@ -2,13 +2,17 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @using ManualApp.Components
+@using ManualApp.Services
+@using ManualApp.Models
 @inject ManualService ManualService
+@inject CategoryService CategoryService
 @inject ContentService ContentService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @inject IPdfService PdfService
 @inject IJSRuntime JSRuntime
 @inject DialogService DialogService
+@inject IGroupService GroupService
 
 <RadzenDialog />
 
@@ -23,7 +27,7 @@
             </label>
         </div>
         <div class="d-flex">
-            <button class="btn btn-primary btn-mobile-hidden" @onclick="AddContent">
+            <button class="btn btn-primary btn-mobile-hidden" @onclick="AddContent" disabled="@(!canEdit)">
                 <span class="bi bi-plus-circle"></span> 追加
             </button>
             <button class="btn btn-success ms-2" @onclick="DownloadPdf" disabled="@isGeneratingPdf">
@@ -93,6 +97,7 @@
     private bool isGeneratingPdf = false;
     private bool isDescending = false;
     private bool isFirstRender = true;
+    private bool canEdit = true;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -128,6 +133,9 @@
                 return;
             }
 
+            // 権限チェック
+            await CheckUserPermissions();
+
             var contentsEnumerable = await ContentService.GetContentsByManualIdAsync(ManualId);
             contents = contentsEnumerable.ToList();
             SortContents();
@@ -135,6 +143,75 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task CheckUserPermissions()
+    {
+        try
+        {
+            if (manual == null) return;
+
+            // マニュアルの所有者の場合は編集可能
+            if (manual.OwnerId == CurrentUserService.UserId)
+            {
+                canEdit = true;
+                return;
+            }
+
+            // グループメンバーの場合、権限をチェック
+            var userMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+            if (userMembership != null && userMembership.Group != null)
+            {
+                // グループのマニュアルの場合、権限をチェック
+                if (manual.OwnerId == userMembership.Group.GroupId.ToString())
+                {
+                    if (userMembership.Permission == GroupPermission.ViewOnly)
+                    {
+                        canEdit = false;
+                    }
+                    else if (userMembership.Permission == GroupPermission.PartialEdit)
+                    {
+                        // 一部編集可の場合、カテゴリーのAllowPartialEditをチェック
+                        canEdit = await CheckCategoryPermission();
+                    }
+                    else
+                    {
+                        // 編集可の場合は常に編集可能
+                        canEdit = true;
+                    }
+                }
+                else
+                {
+                    canEdit = false;
+                }
+            }
+            else
+            {
+                canEdit = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"権限チェックエラー: {ex.Message}");
+            canEdit = false;
+        }
+    }
+
+    private async Task<bool> CheckCategoryPermission()
+    {
+        try
+        {
+            if (manual?.CategoryId == null) return false;
+            
+            // カテゴリーのAllowPartialEditをチェック
+            var category = await CategoryService.GetCategoryByIdAsync(manual.CategoryId);
+            return category?.AllowPartialEdit ?? false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"カテゴリー権限チェックエラー: {ex.Message}");
+            return false;
         }
     }
 
@@ -191,25 +268,25 @@
             <div>
                 <button class="btn btn-sm btn-outline-secondary me-1 btn-mobile-hidden" 
                         @onclick="() => MoveUp(content.ContentId)"
-                        disabled="@(content.Order == 1)">
+                        disabled="@(content.Order == 1 || !canEdit)">
                     前へ
                 </button>
                 <button class="btn btn-sm btn-outline-secondary me-1 btn-mobile-hidden" 
                         @onclick="() => MoveDown(content.ContentId)"
-                        disabled="@(content.Order == contents.Count)">
+                        disabled="@(content.Order == contents.Count || !canEdit)">
                     後へ
                 </button>
-                <button class="btn btn-sm btn-outline-primary me-1 btn-mobile-hidden" @onclick="() => EditContent(content.ContentId)">
+                <button class="btn btn-sm btn-outline-primary me-1 btn-mobile-hidden" @onclick="() => EditContent(content.ContentId)" disabled="@(!canEdit)">
                     <span class="bi bi-pencil"></span> 編集
                 </button>
-                <button class="btn btn-sm btn-outline-danger btn-mobile-hidden" @onclick="() => DeleteContent(content.ContentId)">
+                <button class="btn btn-sm btn-outline-danger btn-mobile-hidden" @onclick="() => DeleteContent(content.ContentId)" disabled="@(!canEdit)">
                     <span class="bi bi-trash"></span> 削除
                 </button>
             </div>
         </div>
         <div class="card-body d-flex flex-column p-0">
             <div style="height: 340px; position: relative;">
-                @if (content.Image != null)
+                @if (content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath))
                 {
                     <div class="text-center h-100 d-flex align-items-center justify-content-center" style="background-color: #f8f9fa;">
                         <img src="@content.Image.FilePath" class="img-fluid rounded" alt="コンテンツ画像" style="max-height: 100%; max-width: 100%; object-fit: contain;" />
@@ -222,13 +299,16 @@
                 }
                 else
                 {
-                    <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa;">
-                        <span class="bi bi-image" style="font-size: 3rem;"></span>
-                        <p>画像なし</p>
+                    <div class="text-center text-muted h-100 d-flex flex-column align-items-center justify-content-center" style="background-color: #f8f9fa; padding: 2rem;">
+                        <div style="width: 60px; height: 60px; border: 2px dashed #dee2e6; border-radius: 8px; display: flex; align-items: center; justify-content: center; background-color: white; margin-bottom: 1rem;">
+                            <span class="bi bi-image" style="font-size: 1.5rem; color: #6c757d;"></span>
+                        </div>
+                        <h6 class="mb-1" style="color: #495057; font-weight: 500; font-size: 0.9rem;">画像なし</h6>
+                        <p class="mb-0" style="font-size: 0.75rem; color: #6c757d;">画像が設定されていません</p>
                     </div>
                 }
             </div>
-            <div class="p-3" style="height: 170px; overflow-y: auto;">
+            <div class="p-3" style="height: 170px; overflow-y: auto; position: relative;">
                 <div class="content-text">
                     @if (string.IsNullOrEmpty(content.Text))
                     {
@@ -238,6 +318,11 @@
                     {
                         @((MarkupString)content.Text.Replace("\n", "<br/>"))
                     }
+                </div>
+                <!-- 編集者と編集日を右下に表示 -->
+                <div class="position-absolute bottom-0 end-0 p-2" style="font-size: 0.75rem; color: #6c757d;">
+                    <div>編集者: @(content.Creator?.Email ?? "不明")</div>
+                    <div>編集日: @content.CreatedAt.ToString("yyyy/MM/dd")</div>
                 </div>
             </div>
         </div>

@@ -5,6 +5,10 @@
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @inject CategoryService CategoryService
+@inject IGroupService GroupService
+@inject IModeService ModeService
+@inject IJSRuntime JSRuntime
+@using ManualApp.Models
 
 <div style="position: relative;">
     <h3>マニュアル一覧</h3>
@@ -20,7 +24,7 @@
                 }
             </select>
         </div>
-        <button class="btn btn-primary btn-mobile-hidden" @onclick="CreateManual">
+        <button class="btn btn-primary btn-mobile-hidden" @onclick="CreateManual" disabled="@(!CanCreateManual())">
             <span class="bi bi-plus-circle"></span> 追加
         </button>
     </div>
@@ -33,6 +37,7 @@
                     <tr>
                         <th>タイトル</th>
                         <th class="mobile-hidden-column">カテゴリー</th>
+                        <th class="mobile-hidden-column">作成者</th>
                         <th class="mobile-hidden-column">作成日</th>
                         <th class="mobile-hidden-column">操作</th>
                         <th></th>
@@ -42,16 +47,32 @@
                     @foreach (var manual in filteredManuals)
                     {
                         <tr>
-                            <td>@manual.Title</td>
-                            <td class="mobile-hidden-column">@manual.Category.Name</td>
+                            <td>@(manual.Title.Length > 20 ? manual.Title.Substring(0, 20) + "..." : manual.Title)</td>
+                            <td class="mobile-hidden-column">@(manual.Category.Name.Length > 8 ? manual.Category.Name.Substring(0, 8) + "..." : manual.Category.Name)</td>
+                            <td class="mobile-hidden-column">@{
+                                var creatorEmail = manual.Creator?.Email ?? "不明";
+                                @(creatorEmail.Length > 30 ? creatorEmail.Substring(0, 30) + "..." : creatorEmail)
+                            }</td>
                             <td class="mobile-hidden-column">@manual.CreatedAt.ToString("yyyy/MM/dd")</td>
                             <td class="mobile-hidden-column">
-                                <button class="btn btn-sm btn-outline-primary me-2 btn-mobile-hidden" @onclick="() => EditManual(manual.ManualId)">
+                                <button class="btn btn-sm btn-outline-primary me-2 btn-mobile-hidden" 
+                                        @onclick="() => EditManual(manual.ManualId)"
+                                        disabled="@(!CanEditManual(manual))">
                                     <span class="bi bi-pencil"></span> 編集
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger btn-mobile-hidden" @onclick="() => DeleteManual(manual.ManualId)">
+                                <button class="btn btn-sm btn-outline-danger me-2 btn-mobile-hidden" 
+                                        @onclick="() => ConfirmDeleteManual(manual.ManualId)"
+                                        disabled="@(!CanDeleteManual(manual))">
                                     <span class="bi bi-trash"></span> 削除
                                 </button>
+                                @if (IsPersonalMode() && CanTransferToGroup(manual))
+                                {
+                                    <button class="btn btn-sm btn-outline-success btn-mobile-hidden" 
+                                            @onclick="() => TransferManualToGroup(manual.ManualId)"
+                                            title="グループ所有に変更">
+                                        <span class="bi bi-people"></span> グループ所有
+                                    </button>
+                                }
                             </td>
                             <td class="text-end">
                                 <button class="btn btn-sm" style="background-color: #28a745; border: none; color: white; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4); transition: all 0.3s ease;" @onclick="() => ViewManual(manual.ManualId)">
@@ -91,6 +112,7 @@
     private List<Category> categories = new();
     private bool isLoading = true;
     private int? selectedCategoryId = null;
+    private GroupMembership? userMembership;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -110,6 +132,10 @@
             var userId = CurrentUserService.UserId;
             var manualsEnumerable = await ManualService.GetManualsByUserAsync(userId);
             manuals = manualsEnumerable.ToList();
+            
+            // ユーザーのグループメンバーシップを取得
+            userMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+            
             ApplyFilter();
         }
         finally
@@ -173,12 +199,187 @@
         Navigation.NavigateTo($"/manuals/view/{id}");
     }
 
+    private async Task ConfirmDeleteManual(int id)
+    {
+        var manual = manuals.FirstOrDefault(m => m.ManualId == id);
+        if (manual != null)
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"マニュアル「{manual.Title}」を削除しますか？この操作は取り消せません。");
+            if (confirmed)
+            {
+                await DeleteManual(id);
+            }
+        }
+    }
+
     private async Task DeleteManual(int id)
     {
         var result = await ManualService.DeleteManualAsync(id);
         if (result)
         {
             await LoadManuals();
+        }
+    }
+
+    private bool CanEditManual(Manual manual)
+    {
+        // 管理者は常に編集可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // 自分のマニュアルは編集可能
+        if (manual.OwnerId == CurrentUserService.UserId)
+            return true;
+
+        // グループ機能の権限チェック
+        if (userMembership != null)
+        {
+            // 編集可権限の場合は編集可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可の場合、デフォルトカテゴリーのマニュアルは編集不可
+            if (userMembership.Permission == GroupPermission.PartialEdit)
+            {
+                // デフォルトカテゴリーのマニュアルは編集不可
+                var category = categories.FirstOrDefault(c => c.CategoryId == manual.CategoryId);
+                if (category?.IsDefault == true)
+                    return false;
+                
+                // デフォルトカテゴリー以外で、AllowPartialEditがtrueなら編集可能
+                return category?.AllowPartialEdit ?? false;
+            }
+
+            // 閲覧可の場合は編集不可
+            if (userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        return false;
+    }
+
+    private bool CanDeleteManual(Manual manual)
+    {
+        // 管理者は常に削除可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // 自分のマニュアルは削除可能
+        if (manual.OwnerId == CurrentUserService.UserId)
+            return true;
+
+        // グループ機能の権限チェック
+        if (userMembership != null)
+        {
+            // 編集可権限の場合は削除可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可と閲覧可の場合は削除不可
+            if (userMembership.Permission == GroupPermission.PartialEdit || 
+                userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        return false;
+    }
+
+    private bool IsPersonalMode()
+    {
+        return ModeService.CurrentMode == ViewMode.Personal;
+    }
+
+    private bool CanCreateManual()
+    {
+        // 管理者は常に作成可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は作成可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可の場合は、AllowPartialEdit=trueのカテゴリーが存在する場合のみ作成可能
+            if (userMembership.Permission == GroupPermission.PartialEdit)
+                return GetSelectableCategoriesForPartialEdit().Any();
+
+            // 閲覧可の場合は作成不可
+            if (userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        // グループに所属していない場合は作成可能
+        return true;
+    }
+
+    private List<Category> GetSelectableCategoriesForPartialEdit()
+    {
+        return categories.Where(c => c.AllowPartialEdit).ToList();
+    }
+
+    private bool CanTransferToGroup(Manual manual)
+    {
+        // 管理者は常に変更可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // 個人所有のマニュアルのみ変更可能
+        if (manual.OwnerId == CurrentUserService.UserId)
+            return true;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は変更可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可と閲覧可の場合は変更不可
+            if (userMembership.Permission == GroupPermission.PartialEdit || 
+                userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        return false;
+    }
+
+    private async Task TransferManualToGroup(int manualId)
+    {
+        try
+        {
+            // 確認ダイアログを表示
+            var manual = manuals.FirstOrDefault(m => m.ManualId == manualId);
+            var manualTitle = manual?.Title ?? "マニュアル";
+            
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+                $"「{manualTitle}」をグループ所有に変更します。\n\n実行すると個人所有には戻せません。\n本当に実行しますか？");
+            
+            if (!confirmed)
+                return;
+
+            var success = await ManualService.TransferManualToGroupAsync(manualId);
+            if (success)
+            {
+                // マニュアル一覧を再読み込み
+                await LoadManuals();
+                StateHasChanged();
+                
+                // 成功メッセージを表示
+                await JSRuntime.InvokeVoidAsync("alert", $"「{manualTitle}」をグループ所有に変更しました。");
+            }
+            else
+            {
+                // エラーメッセージを表示
+                await JSRuntime.InvokeVoidAsync("alert", "グループ所有への変更に失敗しました。");
+            }
+        }
+        catch (Exception)
+        {
+            // エラーハンドリング
+            await JSRuntime.InvokeVoidAsync("alert", "エラーが発生しました。");
         }
     }
 }

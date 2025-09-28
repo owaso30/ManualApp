@@ -1,0 +1,801 @@
+@page "/groups"
+@rendermode InteractiveServer
+@using ManualApp.Models
+@using ManualApp.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize]
+@inject IGroupService GroupService
+@inject ICurrentUserService CurrentUserService
+@inject UserManager<ApplicationUser> UserManager
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject IModeService ModeService
+
+<PageTitle>グループ管理</PageTitle>
+
+<!-- モバイル制限メッセージ -->
+<div class="mobile-restriction-message">
+    <div class="mobile-restriction-content">
+        <i class="fas fa-mobile-alt mobile-restriction-icon"></i>
+        <div class="mobile-restriction-title">モバイル表示では利用できません</div>
+        <div class="mobile-restriction-text">
+            この機能はデスクトップ表示でのみご利用いただけます。<br>
+            画面幅を広げるか、デスクトップブラウザでアクセスしてください。
+        </div>
+        <a href="/" class="btn btn-primary">ホームに戻る</a>
+    </div>
+</div>
+
+<div class="mobile-restricted-content" style="position: relative;">
+    <h3>グループ管理</h3>
+
+    @if (isLoading)
+    {
+        <div class="text-center p-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">読み込み中...</span>
+            </div>
+            <div class="mt-2">読み込み中...</div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+                @if (userGroupMembership == null)
+                {
+                    <!-- グループ参加セクション -->
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5>グループに参加する</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>グループに参加するには、グループIDを入力してください。</p>
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text">G-</span>
+                                    <input type="text" class="form-control" placeholder="グループコード" @bind="joinGroupCode" />
+                                    <button class="btn btn-primary" @onclick="RequestToJoinGroup" disabled="@isJoining">
+                                        @if (isJoining)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="fas fa-user-plus me-1"></i>
+                                        }
+                                        参加申請
+                                    </button>
+                                </div>
+                                @if (!string.IsNullOrEmpty(joinMessage))
+                                {
+                                    <div class="mt-2 @(joinMessage.StartsWith("エラー") ? "text-danger" : "text-success")">
+                                        @joinMessage
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- グループ作成セクション -->
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5>グループを作成する</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>新しいグループを作成して、マニュアルやカテゴリーを共有しましょう。</p>
+                                <button class="btn btn-success mb-3" @onclick="ShowCreateGroupModal">
+                                    <span class="bi bi-plus-circle me-1"></span> 新規作成
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+                
+                @if (userGroupMembership != null && userGroupMembership.Group != null)
+                {
+                    <div class="col-md-6">
+                        <!-- グループ情報 -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5>グループ情報</h5>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>グループ名:</strong> @userGroupMembership.Group.Name</p>
+                                <p><strong>グループID:</strong> @userGroupMembership.Group.GroupCode</p>
+                                <p><strong>自身の権限: </strong> 
+                                    @if (userGroupMembership.Group.OwnerId == CurrentUserService.UserId)
+                                    {
+                                        <span class="badge bg-warning text-dark fs-6">
+                                            <i class="fas fa-crown me-1"></i>管理者
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        @if (userGroupMembership.Permission == GroupPermission.FullEdit)
+                                        {
+                                            <span class="badge bg-success">編集可</span>
+                                        }
+                                        else if (userGroupMembership.Permission == GroupPermission.PartialEdit)
+                                        {
+                                            <span class="badge bg-primary">一部編集可</span>
+                                        }
+                                        else if (userGroupMembership.Permission == GroupPermission.ViewOnly)
+                                        {
+                                            <span class="badge bg-secondary">閲覧可</span>
+                                        }
+                                    }
+                                </p>
+                                <p><strong>メンバー数:</strong> @(groupMembers.Count)人</p>
+                                
+                                <div class="mt-3">
+                                    @if (userGroupMembership.Group.OwnerId == CurrentUserService.UserId)
+                                    {
+                                        <!-- グループ管理者の場合 -->
+                                        <button class="btn btn-danger btn-sm me-2" @onclick="@(() => DeleteGroup(userGroupMembership.Group.GroupId))">
+                                            グループ削除
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" disabled="true" title="グループ管理者は脱退できません">
+                                            グループ脱退
+                                        </button>
+                                        <small class="text-muted d-block mt-1">※ グループ管理者は脱退できません。</small>
+                                    }
+                                    else
+                                    {
+                                        <!-- 一般メンバーの場合 -->
+                                        <button class="btn btn-secondary btn-sm" @onclick="LeaveGroup" disabled="@isLeavingGroup">
+                                            @if (isLeavingGroup)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                            }
+                                            グループを脱退
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 参加申請処理セクション -->
+                        @if (pendingRequests.Any())
+                        {
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5>参加申請の処理</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-bell me-2"></i>
+                                        <strong>@pendingRequests.Count</strong>件の参加申請があります
+                                    </div>
+                                    <div class="list-group">
+                                        @foreach (var request in pendingRequests)
+                                        {
+                                            <div class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <h6 class="mb-1">@request.Group.Name</h6>
+                                                        <p class="mb-1"><strong>申請者:</strong> @request.Requester.DisplayName (@request.Requester.Email)</p>
+                                                        <p class="mb-1"><strong>申請日時:</strong> @request.RequestedAt.ToString("yyyy/MM/dd HH:mm")</p>
+                                                        @if (!string.IsNullOrEmpty(request.Message))
+                                                        {
+                                                            <p class="mb-1"><strong>メッセージ:</strong> @request.Message</p>
+                                                        }
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-success" 
+                                                                @onclick="() => ProcessJoinRequest(request.GroupJoinRequestId, true)"
+                                                                disabled="@(isProcessingJoinRequest && processingRequestId == request.GroupJoinRequestId)">
+                                                            @if (isProcessingJoinRequest && processingRequestId == request.GroupJoinRequestId && processingApproval == true)
+                                                            {
+                                                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                                            }
+                                                            <i class="fas fa-check"></i> 承認
+                                                        </button>
+                                                        <button class="btn btn-danger" 
+                                                                @onclick="() => ProcessJoinRequest(request.GroupJoinRequestId, false)"
+                                                                disabled="@(isProcessingJoinRequest && processingRequestId == request.GroupJoinRequestId)">
+                                                            @if (isProcessingJoinRequest && processingRequestId == request.GroupJoinRequestId && processingApproval == false)
+                                                            {
+                                                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                                            }
+                                                            <i class="fas fa-times"></i> 拒否
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="col-md-6">
+                        <!-- メンバー一覧（全メンバー表示） -->
+                        @if (groupMembers.Any())
+                        {
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5>メンバー一覧</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>ユーザー名</th>
+                                                    <th>メールアドレス</th>
+                                                    <th>権限</th>
+                                                    <th>参加日</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var membership in groupMembers)
+                                                {
+                                                    <tr>
+                                                        <td>@membership.User.DisplayName</td>
+                                                        <td>@membership.User.Email</td>
+                                                        <td>
+                                                            @if (userGroupMembership.Group.OwnerId == CurrentUserService.UserId)
+                                                            {
+                                                                <!-- グループ管理者の場合：権限変更可能 -->
+                                                                @if (membership.UserId != CurrentUserService.UserId)
+                                                                {
+                                                                    @if (userGroupMembership.Group.OwnerId == membership.UserId)
+                                                                    {
+                                                                        <span class="badge bg-warning text-dark">
+                                                                            <i class="fas fa-crown me-1"></i>管理者
+                                                                        </span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <select class="form-select form-select-sm" @onchange="(e) => UpdateMemberPermission(membership.UserId, (GroupPermission)Enum.Parse(typeof(GroupPermission), e.Value.ToString()))">
+                                                                            @foreach (GroupPermission perm in Enum.GetValues(typeof(GroupPermission)))
+                                                                            {
+                                                                                <option value="@perm" selected="@(membership.Permission == perm)">@GetPermissionText(perm)</option>
+                                                                            }
+                                                                        </select>
+                                                                    }
+                                                                }
+                                                                else
+                                                                {
+                                                                    @if (userGroupMembership.Group.OwnerId == membership.UserId)
+                                                                    {
+                                                                        <span class="badge bg-warning text-dark">
+                                                                            <i class="fas fa-crown me-1"></i>管理者
+                                                                        </span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span>@GetPermissionText(membership.Permission)</span>
+                                                                    }
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <!-- 一般メンバーの場合：権限変更不可、自分と管理者以外は非表示 -->
+                                                                @if (userGroupMembership.Group.OwnerId == membership.UserId)
+                                                                {
+                                                                    <span class="badge bg-warning text-dark">
+                                                                        <i class="fas fa-crown me-1"></i>管理者
+                                                                    </span>
+                                                                }
+                                                                else if (membership.UserId == CurrentUserService.UserId)
+                                                                {
+                                                                    @if (membership.Permission == GroupPermission.FullEdit)
+                                                                    {
+                                                                        <span class="badge bg-success">編集可</span>
+                                                                    }
+                                                                    else if (membership.Permission == GroupPermission.PartialEdit)
+                                                                    {
+                                                                        <span class="badge bg-primary">一部編集可</span>
+                                                                    }
+                                                                    else if (membership.Permission == GroupPermission.ViewOnly)
+                                                                    {
+                                                                        <span class="badge bg-secondary">閲覧可</span>
+                                                                    }
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span class="text-muted">-</span>
+                                                                }
+                                                            }
+                                                        </td>
+                                                        <td>@membership.JoinedAt.ToString("yyyy/MM/dd")</td>
+                                                        <td>
+                                                            @if (userGroupMembership.Group.OwnerId == CurrentUserService.UserId)
+                                                            {
+                                                                <!-- グループ管理者の場合：削除可能 -->
+                                                                @if (membership.UserId != CurrentUserService.UserId && userGroupMembership.Group.OwnerId != membership.UserId)
+                                                                {
+                                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveMember(membership.UserId)">
+                                                                        削除
+                                                                    </button>
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <!-- 一般メンバーの場合：削除不可 -->
+                                                                <span class="text-muted">-</span>
+                                                            }
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+        </div>
+    }
+</div>
+
+<!-- グループ作成モーダル -->
+@if (showCreateModal == true)
+{
+    <div class="modal show d-block" tabindex="-1" @onclick="HideCreateGroupModal">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">新規グループ作成</h5>
+                    <button type="button" class="btn-close" @onclick="HideCreateGroupModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="groupName" class="form-label">グループ名</label>
+                        <input type="text" id="groupName" class="form-control" @bind="newGroup.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label for="groupDescription" class="form-label">説明 (任意)</label>
+                        <textarea id="groupDescription" class="form-control" @bind="newGroup.Description"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideCreateGroupModal">キャンセル</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateGroup" disabled="@isCreating">
+                        @if (isCreating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        }
+                        作成
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+
+@code {
+    private List<ManualApp.Models.Group> ownedGroups = new();
+    private List<GroupJoinRequest> pendingRequests = new();
+    private GroupMembership? userGroupMembership = null;
+    private List<GroupMembership> groupMembers = new();
+    
+    private bool showCreateModal = false;
+    private ManualApp.Models.Group newGroup = new();
+    private bool isCreating = false;
+    private bool isLoading = true;
+    private bool isJoining = false;
+    private bool isLeavingGroup = false;
+    private bool isProcessingJoinRequest = false;
+    private int? processingRequestId = null;
+    private bool? processingApproval = null;
+    private bool isMobile = false;
+    
+    private string joinGroupCode = "";
+    private string joinMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // すべての状態変数を明示的に初期化
+        showCreateModal = false;
+        newGroup = new ManualApp.Models.Group();
+        isCreating = false;
+        isLoading = true;
+        isJoining = false;
+        isLeavingGroup = false;
+        isProcessingJoinRequest = false;
+        processingRequestId = null;
+        processingApproval = null;
+        joinGroupCode = "";
+        joinMessage = "";
+        
+        // データフィールドを完全にリセット
+        ownedGroups = new List<ManualApp.Models.Group>();
+        pendingRequests = new List<GroupJoinRequest>();
+        userGroupMembership = null;
+        groupMembers = new List<GroupMembership>();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // データを完全にリセット
+            ownedGroups = new List<ManualApp.Models.Group>();
+            pendingRequests = new List<GroupJoinRequest>();
+            userGroupMembership = null;
+            groupMembers = new List<GroupMembership>();
+            
+            await CheckMobileAndRedirect();
+            await LoadData();
+            
+            // リサイズイベントリスナーを追加
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                window.addEventListener('resize', function() {
+                    var isMobile = window.innerWidth <= 992;
+                    var event = new CustomEvent('mobileStateChanged', { detail: { isMobile: isMobile } });
+                    window.dispatchEvent(event);
+                });
+            ");
+            
+            // モバイル状態変更リスナーを設定
+            var dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("setupMobileStateListener", dotNetRef);
+            
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckMobileAndRedirect()
+    {
+        try
+        {
+            var isMobileDevice = await JSRuntime.InvokeAsync<bool>("isMobileDevice");
+            isMobile = isMobileDevice;
+            if (isMobileDevice)
+            {
+                Navigation.NavigateTo("/");
+            }
+        }
+        catch
+        {
+            // JavaScript実行に失敗した場合は何もしない
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged(); // ローディング状態を即座に反映
+        
+        try
+        {
+            // データを完全にリセット（新しいインスタンスを作成）
+            ownedGroups = new List<ManualApp.Models.Group>();
+            pendingRequests = new List<GroupJoinRequest>();
+            userGroupMembership = null;
+            groupMembers = new List<GroupMembership>();
+            
+            // UIを即座に更新
+            StateHasChanged();
+            
+            if (CurrentUserService.IsAuthenticated)
+            {
+                ownedGroups = await GroupService.GetUserOwnedGroupsAsync(CurrentUserService.UserId);
+                pendingRequests = await GroupService.GetPendingJoinRequestsAsync(CurrentUserService.UserId);
+                userGroupMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+                
+                // 参加中のグループが自分が作成したグループの場合、ownedGroupsに追加
+                if (userGroupMembership != null && userGroupMembership.Group.OwnerId == CurrentUserService.UserId)
+                {
+                    var currentGroup = userGroupMembership.Group;
+                    if (!ownedGroups.Any(g => g.GroupId == currentGroup.GroupId))
+                    {
+                        ownedGroups.Add(currentGroup);
+                    }
+                }
+                
+                // 各グループのメンバーシップ情報を読み込み
+                foreach (var group in ownedGroups)
+                {
+                    if (group.Memberships == null)
+                    {
+                        group.Memberships = await GroupService.GetGroupMembersAsync(group.GroupId);
+                    }
+                }
+                
+                // 現在参加中のグループのメンバー情報を読み込み（全ユーザー）
+                if (userGroupMembership != null)
+                {
+                    groupMembers = await GroupService.GetGroupMembersAsync(userGroupMembership.Group.GroupId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData error: {ex.Message}");
+            // エラー時もデータをリセット
+            ownedGroups = new List<ManualApp.Models.Group>();
+            pendingRequests = new List<GroupJoinRequest>();
+            userGroupMembership = null;
+            groupMembers = new List<GroupMembership>();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged(); // 最終的な状態を反映
+        }
+    }
+
+    private void ShowCreateGroupModal()
+    {
+        newGroup = new ManualApp.Models.Group();
+        showCreateModal = true;
+    }
+
+    private void HideCreateGroupModal()
+    {
+        showCreateModal = false;
+    }
+
+    private async Task CreateGroup()
+    {
+        if (string.IsNullOrWhiteSpace(newGroup.Name))
+        {
+            return;
+        }
+
+        isCreating = true;
+        try
+        {
+            await GroupService.CreateGroupAsync(newGroup.Name, newGroup.Description, CurrentUserService.UserId);
+            await LoadData();
+            HideCreateGroupModal();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラー: {ex.Message}");
+        }
+        finally
+        {
+            isCreating = false;
+        }
+    }
+
+    private async Task RequestToJoinGroup()
+    {
+        if (string.IsNullOrWhiteSpace(joinGroupCode))
+        {
+            joinMessage = "グループIDを入力してください。";
+            StateHasChanged();
+            return;
+        }
+
+        isJoining = true;
+        joinMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            var fullGroupCode = "G-" + joinGroupCode;
+            var success = await GroupService.RequestToJoinGroupAsync(fullGroupCode, CurrentUserService.UserId, "グループに参加したいです。");
+            if (success)
+            {
+                joinMessage = "成功: グループへの参加申請を送信しました。管理者の承認をお待ちください。";
+                joinGroupCode = "";
+                await LoadData();
+            }
+            else
+            {
+                joinMessage = "エラー: グループが見つからないか、既に参加申請済みです。";
+            }
+        }
+        catch (Exception ex)
+        {
+            joinMessage = $"エラー: {ex.Message}";
+            Console.WriteLine($"エラー: {ex.Message}");
+        }
+        finally
+        {
+            isJoining = false;
+            StateHasChanged();
+            
+            // 3秒後にメッセージをクリア
+            _ = Task.Delay(3000).ContinueWith(_ => {
+                joinMessage = "";
+                InvokeAsync(StateHasChanged);
+            });
+        }
+    }
+
+    private async Task ProcessJoinRequest(int requestId, bool approved)
+    {
+        var request = pendingRequests.FirstOrDefault(r => r.GroupJoinRequestId == requestId);
+        if (request == null) return;
+
+        var action = approved ? "承認" : "拒否";
+        var message = approved 
+            ? $"「{request.Requester.DisplayName}」さんの「{request.Group.Name}」への参加申請を承認しますか？"
+            : $"「{request.Requester.DisplayName}」さんの「{request.Group.Name}」への参加申請を拒否しますか？";
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", message);
+        if (!confirmed) return;
+
+        isProcessingJoinRequest = true;
+        processingRequestId = requestId;
+        processingApproval = approved;
+        StateHasChanged();
+
+        try
+        {
+            var permission = approved ? (GroupPermission?)GroupPermission.ViewOnly : null;
+            var success = await GroupService.ProcessJoinRequestAsync(requestId, CurrentUserService.UserId, approved, permission);
+            
+            if (success)
+            {
+                var successMessage = approved 
+                    ? $"「{request.Requester.DisplayName}」さんの参加申請を承認しました。"
+                    : $"「{request.Requester.DisplayName}」さんの参加申請を拒否しました。";
+                await JSRuntime.InvokeVoidAsync("alert", successMessage);
+                
+                // データをリロードして参加申請セクションの表示を更新
+                await LoadData();
+                StateHasChanged();
+            }
+            else if (approved)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "承認に失敗しました。申請者が既に他のグループに所属しているか、自分でグループを作成している可能性があります。");
+                
+                // データをリロードして参加申請セクションの表示を更新
+                await LoadData();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラー: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"エラーが発生しました: {ex.Message}");
+            
+            // エラー時もデータをリロード
+            await LoadData();
+            StateHasChanged();
+        }
+        finally
+        {
+            isProcessingJoinRequest = false;
+            processingRequestId = null;
+            processingApproval = null;
+            StateHasChanged();
+        }
+    }
+
+
+    private async Task UpdateMemberPermission(string userId, GroupPermission permission)
+    {
+        if (userGroupMembership?.Group != null)
+        {
+            try
+            {
+                await GroupService.UpdateMemberPermissionAsync(userGroupMembership.Group.GroupId, userId, permission, CurrentUserService.UserId);
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"エラー: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task RemoveMember(string userId)
+    {
+        if (userGroupMembership?.Group != null)
+        {
+            try
+            {
+                await GroupService.RemoveMemberAsync(userGroupMembership.Group.GroupId, userId, CurrentUserService.UserId);
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"エラー: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task LeaveGroup()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "グループを脱退してもよろしいですか？\n\n脱退すると個人モードに切り替わり、グループのマニュアルやカテゴリーにアクセスできなくなります。この操作は後戻りできません。");
+        
+        if (!confirmed)
+            return;
+
+        isLeavingGroup = true;
+        StateHasChanged();
+
+        try
+        {
+            await GroupService.LeaveGroupAsync(CurrentUserService.UserId);
+            
+            await ModeService.SetModeAsync(ViewMode.Personal);
+            ModeService.ClearGroupCache();
+            
+            await JSRuntime.InvokeVoidAsync("alert", "グループを脱退しました。ログアウトします。");
+            
+            // 強制ログアウト
+            Navigation.NavigateTo("/Identity/Account/Logout", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラー: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"グループ脱退中にエラーが発生しました: {ex.Message}");
+            
+            isLeavingGroup = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetPermissionText(GroupPermission permission)
+    {
+        return permission switch
+        {
+            GroupPermission.ViewOnly => "閲覧可",
+            GroupPermission.PartialEdit => "一部編集可",
+            GroupPermission.FullEdit => "編集可",
+            _ => "不明"
+        };
+    }
+
+    private async Task DeleteGroup(int groupId)
+    {
+        if (!await GroupService.IsGroupOwnerAsync(groupId, CurrentUserService.UserId))
+        {
+            return;
+        }
+
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "グループを削除してもよろしいですか？この操作は取り消せません。"))
+        {
+            try
+            {
+                var success = await GroupService.DeleteGroupAsync(groupId, CurrentUserService.UserId);
+                if (success)
+                {
+                    ModeService.ClearGroupCache();
+                    await ModeService.SetModeAsync(ViewMode.Personal);
+                    
+                    await LoadData();
+                    StateHasChanged();
+                    
+                    await JSRuntime.InvokeVoidAsync("alert", "グループを削除しました。個人モードに切り替わりました。");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"エラー: {ex.Message}");
+                await JSRuntime.InvokeVoidAsync("alert", $"グループ削除中にエラーが発生しました: {ex.Message}");
+            }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnMobileStateChanged(bool isMobileDevice)
+    {
+        var wasMobile = isMobile;
+        isMobile = isMobileDevice;
+        
+        if (wasMobile && !isMobile)
+        {
+            // モバイルからデスクトップに戻った時はデータを完全にリセットしてから読み込み
+            ownedGroups = new List<ManualApp.Models.Group>();
+            pendingRequests = new List<GroupJoinRequest>();
+            userGroupMembership = null;
+            groupMembers = new List<GroupMembership>();
+            
+            await LoadData();
+        }
+        else if (!wasMobile && isMobile)
+        {
+            Navigation.NavigateTo("/");
+        }
+        
+        StateHasChanged();
+    }
+}

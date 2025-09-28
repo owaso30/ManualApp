@@ -3,6 +3,7 @@ using System;
 using ManualApp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ManualApp.Data.Migrations
 {
     [DbContext(typeof(ManualAppContext))]
-    partial class ManualAppContextModelSnapshot : ModelSnapshot
+    [Migration("20250928114315_AddCreatorInfoToManualAndCategory")]
+    partial class AddCreatorInfoToManualAndCategory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -116,6 +119,9 @@ namespace ManualApp.Data.Migrations
                     b.Property<string>("CreatorId")
                         .HasColumnType("text");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
@@ -143,13 +149,6 @@ namespace ManualApp.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ContentId"));
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatorId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<int>("ManualId")
                         .HasColumnType("integer");
 
@@ -161,8 +160,6 @@ namespace ManualApp.Data.Migrations
                         .HasColumnType("character varying(200)");
 
                     b.HasKey("ContentId");
-
-                    b.HasIndex("CreatorId");
 
                     b.HasIndex("ManualId");
 
@@ -502,19 +499,11 @@ namespace ManualApp.Data.Migrations
 
             modelBuilder.Entity("ManualApp.Models.Content", b =>
                 {
-                    b.HasOne("ManualApp.Models.ApplicationUser", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("ManualApp.Models.Manual", "Manual")
                         .WithMany("Contents")
                         .HasForeignKey("ManualId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Creator");
 
                     b.Navigation("Manual");
                 });

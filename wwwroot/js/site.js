@@ -52,3 +52,40 @@ window.getSessionStorage = function(key) {
 window.removeSessionStorage = function(key) {
     sessionStorage.removeItem(key);
 };
+
+// モバイル状態変更イベントリスナー
+window.setupMobileStateListener = function(dotNetRef) {
+    window.addEventListener('mobileStateChanged', function(event) {
+        dotNetRef.invokeMethodAsync('OnMobileStateChanged', event.detail.isMobile);
+    });
+};
+
+// Cookie設定関数
+window.setCookie = function(name, value, days) {
+    try {
+        const expires = new Date();
+        expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+        const cookieString = `${name}=${value}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+        document.cookie = cookieString;
+        return true;
+    } catch (error) {
+        console.error('Cookie設定エラー:', error);
+        return false;
+    }
+};
+
+// Cookie取得関数
+window.getCookie = function(name) {
+    try {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+            const cookieValue = parts.pop().split(';').shift();
+            return cookieValue;
+        }
+        return null;
+    } catch (error) {
+        console.error('Cookie取得エラー:', error);
+        return null;
+    }
+};

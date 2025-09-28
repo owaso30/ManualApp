@@ -6,6 +6,7 @@
 @inject CategoryService CategoryService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
+@inject IGroupService GroupService
 
 <h3>@(IsEdit ? "マニュアル編集" : "新しいマニュアル")</h3>
 
@@ -29,7 +30,7 @@
                 <label for="category" class="form-label">カテゴリー <span class="text-danger">*</span></label>
                 <InputSelect id="category" class="form-select" @bind-Value="manual.CategoryId">
                     <option value="">カテゴリーを選択してください</option>
-                    @foreach (var category in categories)
+                    @foreach (var category in GetSelectableCategories())
                     {
                         <option value="@category.CategoryId">@category.Name</option>
                     }
@@ -60,9 +61,20 @@
     private List<Category> categories = new();
     private bool isSaving = false;
     private bool IsEdit => Id.HasValue;
+    private GroupMembership? userMembership;
 
     protected override async Task OnInitializedAsync()
     {
+        // グループメンバーシップを取得
+        try
+        {
+            userMembership = await GroupService.GetUserMembershipAsync(CurrentUserService.UserId);
+        }
+        catch (Exception)
+        {
+            userMembership = null;
+        }
+
         // カテゴリー一覧を読み込み
         var categoriesEnumerable = await CategoryService.GetAllCategoriesAsync();
         categories = categoriesEnumerable.ToList();
@@ -73,6 +85,13 @@
             if (existingManual is not null)
             {
                 manual = existingManual;
+                
+                // デフォルトカテゴリーのマニュアルで一部編集可ユーザーの場合はリダイレクト
+                if (IsDefaultCategoryManual() && !CanEditManual())
+                {
+                    Navigation.NavigateTo("/manuals");
+                    return;
+                }
             }
             else
             {
@@ -82,11 +101,28 @@
         }
         else
         {
-            // 新規作成時はデフォルトカテゴリーを選択
-            var defaultCategory = categories.FirstOrDefault(c => c.IsDefault);
-            if (defaultCategory is not null)
+            // 新規作成時の権限チェック
+            if (!CanCreateManual())
             {
-                manual.CategoryId = defaultCategory.CategoryId;
+                Navigation.NavigateTo("/manuals");
+                return;
+            }
+
+            // 新規作成時は選択可能なカテゴリーの最初のものを選択
+            var selectableCategories = GetSelectableCategories();
+            if (selectableCategories.Any())
+            {
+                // デフォルトカテゴリーが選択可能な場合はそれを選択
+                var defaultCategory = selectableCategories.FirstOrDefault(c => c.IsDefault);
+                if (defaultCategory is not null)
+                {
+                    manual.CategoryId = defaultCategory.CategoryId;
+                }
+                else
+                {
+                    // デフォルトカテゴリーが選択不可の場合は最初の選択可能なカテゴリーを選択
+                    manual.CategoryId = selectableCategories.First().CategoryId;
+                }
             }
             manual.OwnerId = CurrentUserService.UserId;
         }
@@ -122,5 +158,100 @@
     private void Cancel()
     {
         Navigation.NavigateTo("/manuals");
+    }
+
+    private bool IsDefaultCategoryManual()
+    {
+        var category = categories.FirstOrDefault(c => c.CategoryId == manual.CategoryId);
+        return category?.IsDefault ?? false;
+    }
+
+    private bool CanEditManual()
+    {
+        // 管理者は常に編集可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // 自分のマニュアルは編集可能
+        if (manual.OwnerId == CurrentUserService.UserId)
+            return true;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は編集可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可の場合、デフォルトカテゴリーのマニュアルは編集不可
+            if (userMembership.Permission == GroupPermission.PartialEdit)
+            {
+                // デフォルトカテゴリーのマニュアルは編集不可
+                if (IsDefaultCategoryManual())
+                    return false;
+                
+                // デフォルトカテゴリー以外で、AllowPartialEditがtrueなら編集可能
+                var category = categories.FirstOrDefault(c => c.CategoryId == manual.CategoryId);
+                return category?.AllowPartialEdit ?? false;
+            }
+
+            // 閲覧可の場合は編集不可
+            if (userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        return false;
+    }
+
+    private List<Category> GetSelectableCategories()
+    {
+        // 管理者は全てのカテゴリーを選択可能
+        if (CurrentUserService.IsAdmin)
+            return categories;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は全てのカテゴリーを選択可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return categories;
+
+            // 一部編集可の場合はAllowPartialEdit=trueのカテゴリーのみ選択可能
+            if (userMembership.Permission == GroupPermission.PartialEdit)
+                return categories.Where(c => c.AllowPartialEdit).ToList();
+
+            // 閲覧可の場合は選択不可（空のリスト）
+            if (userMembership.Permission == GroupPermission.ViewOnly)
+                return new List<Category>();
+        }
+
+        // グループに所属していない場合は全てのカテゴリーを選択可能
+        return categories;
+    }
+
+    private bool CanCreateManual()
+    {
+        // 管理者は常に作成可能
+        if (CurrentUserService.IsAdmin)
+            return true;
+
+        // グループメンバーの場合の権限チェック
+        if (userMembership != null)
+        {
+            // フル編集権限の場合は作成可能
+            if (userMembership.Permission == GroupPermission.FullEdit)
+                return true;
+
+            // 一部編集可の場合は、AllowPartialEdit=trueのカテゴリーが存在する場合のみ作成可能
+            if (userMembership.Permission == GroupPermission.PartialEdit)
+                return GetSelectableCategories().Any();
+
+            // 閲覧可の場合は作成不可
+            if (userMembership.Permission == GroupPermission.ViewOnly)
+                return false;
+        }
+
+        // グループに所属していない場合は作成可能
+        return true;
     }
 }

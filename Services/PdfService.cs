@@ -65,7 +65,7 @@ public class PdfService : IPdfService
                                 .FontFamily(boldFamily)
                                 .Bold();
 
-                            column.Item().Text($"作成日: {DateTime.Now:yyyy年MM月dd日}")
+                            column.Item().Text($"出力日: {DateTime.Now:yyyy年MM月dd日}")
                                 .FontSize(10)
                                 .FontColor(Colors.Grey.Medium);
                         });

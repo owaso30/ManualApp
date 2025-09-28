@@ -15,9 +15,13 @@ namespace ManualApp.Models
 
         // 所有者のID（IdentityUser の主キー）
         public string OwnerId { get; set; } = default!;
+        
+        // 作成者のID（IdentityUser の主キー）
+        public string CreatorId { get; set; } = default!;
 
         // ナビゲーション
         public ApplicationUser? Owner { get; set; }
+        public ApplicationUser? Creator { get; set; }
         public List<Content> Contents { get; set; } = new();
     }
 }

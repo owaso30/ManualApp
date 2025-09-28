@@ -7,16 +7,21 @@ namespace ManualApp.Services
     public class ContentService
     {
         private readonly ManualAppContext _context;
+        private readonly S3Service _s3Service;
+        private readonly ICurrentUserService _currentUserService;
 
-        public ContentService(ManualAppContext context)
+        public ContentService(ManualAppContext context, S3Service s3Service, ICurrentUserService currentUserService)
         {
             _context = context;
+            _s3Service = s3Service;
+            _currentUserService = currentUserService;
         }
 
         public async Task<IEnumerable<Content>> GetContentsByManualIdAsync(int manualId)
         {
             return await _context.Contents
                 .Include(c => c.Image)
+                .Include(c => c.Creator)
                 .Where(c => c.ManualId == manualId)
                 .OrderBy(c => c.Order)
                 .ToListAsync();
@@ -26,17 +31,35 @@ namespace ManualApp.Services
         {
             return await _context.Contents
                 .Include(c => c.Image)
+                .Include(c => c.Creator)
                 .FirstOrDefaultAsync(c => c.ContentId == id);
         }
 
         public async Task<Content> AddContentAsync(Content content)
         {
+            // ManualIdの存在確認
+            var manualExists = await _context.Manuals.AnyAsync(m => m.ManualId == content.ManualId);
+            if (!manualExists)
+            {
+                throw new InvalidOperationException($"指定されたマニュアル（ID: {content.ManualId}）が見つかりません。");
+            }
+            
             // 新しいコンテンツの順序を設定（最後に追加）
             var maxOrder = await _context.Contents
                 .Where(c => c.ManualId == content.ManualId)
                 .MaxAsync(c => (int?)c.Order) ?? 0;
             
             content.Order = maxOrder + 1;
+            
+            // 作成者IDを現在のユーザーに設定
+            var userId = _currentUserService.UserId;
+            if (string.IsNullOrEmpty(userId))
+            {
+                throw new InvalidOperationException("ユーザーIDが取得できません。ログイン状態を確認してください。");
+            }
+            
+            content.CreatorId = userId;
+            content.CreatedAt = DateTime.UtcNow;
             
             _context.Contents.Add(content);
             await _context.SaveChangesAsync();
@@ -59,12 +82,13 @@ namespace ManualApp.Services
             if (content == null)
                 return false;
 
-            // 画像も削除
-            if (content.Image != null)
+            // S3上の画像ファイルを削除
+            if (content.Image != null && !string.IsNullOrEmpty(content.Image.FilePath))
             {
-                _context.Images.Remove(content.Image);
+                await _s3Service.DeleteFileIfExistsAsync(content.Image.FilePath);
             }
 
+            // Contentを削除（CascadeでImageも自動削除される）
             _context.Contents.Remove(content);
             await _context.SaveChangesAsync();
             

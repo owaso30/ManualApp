@@ -40,6 +40,26 @@ namespace ManualApp.Services
             await _s3Client.DeleteObjectAsync(_bucketName, key);
         }
 
+        public async Task DeleteFileIfExistsAsync(string fileUrl)
+        {
+            if (string.IsNullOrEmpty(fileUrl))
+                return;
+
+            try
+            {
+                // URL形式をチェック
+                if (Uri.IsWellFormedUriString(fileUrl, UriKind.Absolute))
+                {
+                    await DeleteFileAsync(fileUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"S3ファイル削除エラー: {ex.Message}");
+                // 削除に失敗しても処理を続行
+            }
+        }
+
         private string ExtractKeyFromUrl(string fileUrl)
         {
             var uri = new Uri(fileUrl);

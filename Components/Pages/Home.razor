@@ -5,6 +5,10 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
 @inject NavigationManager Navigation
+@inject IGroupService GroupService
+@inject ICurrentUserService CurrentUserService
+@inject IModeService ModeService
+@inject IJSRuntime JSRuntime
 
 <div class="container mt-4" style="position: relative;">
     @if (isSignedIn && currentUser != null)
@@ -35,10 +39,61 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        @if (canSwitchMode)
+                        {
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <h5 class="text-primary mb-3">
+                                        <i class="fas fa-cogs me-2"></i>表示モード設定
+                                    </h5>
+                                    <div class="card border-primary">
+                                        <div class="card-body">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" 
+                                                       id="modeSwitch" 
+                                                       checked="@isGroupMode"
+                                                       @onchange="OnModeChanged">
+                                                <label class="form-check-label" for="modeSwitch">
+                                                    <i class="fas fa-users me-2"></i>
+                                                    @(isGroupMode ? "グループモード" : "個人モード")
+                                                </label>
+                                            </div>
+                                            <small class="text-muted mt-2 d-block">
+                                                @if (isGroupMode)
+                                                {
+                                                    <span>グループのマニュアルとカテゴリーを表示します</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>個人のマニュアルとカテゴリーを表示します</span>
+                                                }
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- グループ参加申請通知 -->
+        @if (pendingRequests.Any())
+        {
+            <div class="row justify-content-center mt-4">
+                <div class="col-12 col-lg-6">
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-bell me-2"></i>グループ参加申請が届いています</h6>
+                        <p class="mb-2">@pendingRequests.Count 件のグループ参加申請が処理待ちです。</p>
+                        <a href="/groups" class="btn btn-warning btn-sm">
+                            <i class="fas fa-cog me-1"></i>グループ管理で確認
+                        </a>
+                    </div>
+                </div>
+            </div>
+        }
 
         <!-- マニュアル一覧へのリンク -->
         <div class="row justify-content-center mt-4">
@@ -117,7 +172,9 @@
     private bool isLoading = true;
     private bool isSignedIn = false;
     private ApplicationUser? currentUser;
-    private bool isFirstRender = true;
+    private List<GroupJoinRequest> pendingRequests = new();
+    private bool canSwitchMode = false;
+    private bool isGroupMode = true;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -147,6 +204,32 @@
                     isSignedIn = false;
                     currentUser = null;
                 }
+                else if (currentUser != null)
+                {
+                        // モード切替の初期化
+                        try
+                        {
+                            canSwitchMode = await ModeService.CanSwitchToGroupModeAsync();
+                            var currentMode = ModeService.CurrentMode;
+                            isGroupMode = currentMode == ViewMode.Group;
+                        }
+                        catch (Exception)
+                        {
+                            canSwitchMode = false;
+                            isGroupMode = true;
+                        }
+                    
+                    // グループ参加申請の通知を取得
+                    try
+                    {
+                        pendingRequests = await GroupService.GetPendingJoinRequestsAsync(CurrentUserService.UserId);
+                    }
+                    catch
+                    {
+                        // エラーが発生した場合は空のリストにする
+                        pendingRequests = new List<GroupJoinRequest>();
+                    }
+                }
             }
         }
         catch (Exception)
@@ -158,6 +241,49 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task OnModeChanged(ChangeEventArgs e)
+    {
+        if (e.Value is bool value)
+        {
+            var newMode = value ? ViewMode.Group : ViewMode.Personal;
+            
+            try
+            {
+                // グループモードに切り替えようとする場合、グループに所属しているかチェック
+                if (newMode == ViewMode.Group && !canSwitchMode)
+                {
+                    // グループに所属していない場合は個人モードに強制切り替え
+                    await ModeService.SetModeAsync(ViewMode.Personal);
+                    await JSRuntime.InvokeVoidAsync("setCookie", "CurrentViewMode", ViewMode.Personal.ToString(), 30);
+                    isGroupMode = false;
+                    StateHasChanged();
+                    await JSRuntime.InvokeVoidAsync("alert", "グループに所属していないため、個人モードに切り替わりました。");
+                    return;
+                }
+                
+                // サーバーサイドでCookieを設定
+                await ModeService.SetModeAsync(newMode);
+                
+                // JavaScript InteropでCookieを設定（確実性を高めるため）
+                await JSRuntime.InvokeVoidAsync("setCookie", "CurrentViewMode", newMode.ToString(), 30);
+                
+                isGroupMode = value;
+                
+                // UIを更新
+                StateHasChanged();
+                
+                // 少し待ってからページをリロードしてモード変更を反映
+                await Task.Delay(100);
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            catch (Exception)
+            {
+                // スイッチを元の状態に戻す
+                StateHasChanged();
+            }
         }
     }
 }
